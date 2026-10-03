@@ -5,13 +5,12 @@ const CF_WORKER_URL = "https://pdf-proxy.zd-81c.workers.dev/"; // 👈 請替換
 
 let currentPageFlip = null;
 let currentPdfDoc = null;
-let currentBlobUrls = [];
 let totalPagesCount = 0;
 let currentLoadingTaskId = 0;
 
-// ⚡ 效能狀態管控
-let isUserInteracting = false; // 是否正在翻頁動畫中
-const renderedPages = new Set(); // 已繪製頁面紀錄
+// ⚡ 視窗動態記憶體管理
+const activePagesMap = new Map(); // pageNum -> imgUrl
+const renderingPagesSet = new Set(); // 當前正在繪製中的頁面
 
 // ⚡ 1. 記憶體快取 (RAM Cache)
 const pdfMemoryCache = new Map();
@@ -202,12 +201,98 @@ async function loadDrivePDFSafeGAS(fileId, taskId) {
 }
 
 /**
+ * ⚡ 單頁極速 Canvas 渲染器
+ */
+async function ensurePageRendered(pageNum, taskId) {
+  if (activePagesMap.has(pageNum) || renderingPagesSet.has(pageNum)) return;
+  if (pageNum < 1 || pageNum > totalPagesCount) return;
+
+  renderingPagesSet.add(pageNum);
+
+  try {
+    const page = await currentPdfDoc.getPage(pageNum);
+    const renderScale = Math.min(window.devicePixelRatio || 1, 1.2);
+    const viewport = page.getViewport({ scale: renderScale });
+
+    const canvas = document.createElement('canvas');
+    const context = canvas.getContext('2d');
+    canvas.height = viewport.height;
+    canvas.width = viewport.width;
+
+    await page.render({ canvasContext: context, viewport: viewport }).promise;
+
+    const imgBlob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.75));
+    if (!imgBlob || taskId !== currentLoadingTaskId) return;
+
+    const imgUrl = URL.createObjectURL(imgBlob);
+    activePagesMap.set(pageNum, imgUrl);
+
+    const targetDiv = document.getElementById(`page-node-${pageNum}`);
+    if (targetDiv) {
+      targetDiv.innerHTML = '';
+      const img = document.createElement('img');
+      img.src = imgUrl;
+      img.alt = `第 ${pageNum} 頁`;
+      targetDiv.appendChild(img);
+    }
+  } catch (e) {
+    console.error(`第 ${pageNum} 頁繪製失敗`, e);
+  } finally {
+    renderingPagesSet.delete(pageNum);
+  }
+}
+
+/**
+ * 🧹 遠處頁面 VRAM 記憶體自動回收機制
+ */
+function cleanupOffscreenPages(currentPage) {
+  const KEEP_RADIUS = 3; // 只保留前後 3 頁
+  for (const [p, imgUrl] of activePagesMap.entries()) {
+    if (Math.abs(p - currentPage) > KEEP_RADIUS) {
+      URL.revokeObjectURL(imgUrl);
+      activePagesMap.delete(p);
+      const div = document.getElementById(`page-node-${p}`);
+      if (div) {
+        div.innerHTML = `<div class="page-skeleton">📄 第 ${p} 頁</div>`;
+      }
+    }
+  }
+}
+
+/**
+ * 🎯 視窗化動態排程器
+ */
+async function updateRenderWindow(currentPage, taskId) {
+  cleanupOffscreenPages(currentPage);
+
+  // 渲染優先權：當前頁 -> 下頁 -> 上頁 -> 隔頁
+  const priorityList = [
+    currentPage,
+    currentPage + 1,
+    currentPage - 1,
+    currentPage + 2,
+    currentPage - 2,
+    currentPage + 3,
+    currentPage - 3
+  ].filter(p => p >= 1 && p <= totalPagesCount);
+
+  for (const p of priorityList) {
+    if (taskId !== currentLoadingTaskId) break;
+    await ensurePageRendered(p, taskId);
+  }
+}
+
+/**
  * 📖 3D 電子書極速順暢渲染引擎
  */
 async function renderFlipbook(pdfData, taskId) {
   showLoading('⚡ 正在排版 3D 電子書...');
   resetZoom();
-  renderedPages.clear();
+
+  // 清空記憶體
+  activePagesMap.forEach(url => URL.revokeObjectURL(url));
+  activePagesMap.clear();
+  renderingPagesSet.clear();
 
   const dropzoneSection = document.getElementById('dropzone-section');
   if (dropzoneSection) dropzoneSection.style.display = 'none';
@@ -220,9 +305,6 @@ async function renderFlipbook(pdfData, taskId) {
     try { currentPageFlip.destroy(); } catch (e) {}
     currentPageFlip = null;
   }
-  
-  currentBlobUrls.forEach(url => URL.revokeObjectURL(url));
-  currentBlobUrls = [];
 
   const viewportContainer = document.querySelector('.flipbook-viewport');
   if (!viewportContainer) return;
@@ -278,12 +360,13 @@ async function renderFlipbook(pdfData, taskId) {
       }
     }
 
+    // 建立輕量化 DOM 骨架
     const pageElements = [];
     for (let i = 1; i <= totalPagesCount; i++) {
       const pageDiv = document.createElement('div');
       pageDiv.className = 'my-page';
       pageDiv.id = `page-node-${i}`;
-      pageDiv.innerHTML = `<div style="color:#aaa; font-size:12px;">📄 第 ${i} 頁...</div>`;
+      pageDiv.innerHTML = `<div class="page-skeleton">📄 第 ${i} 頁</div>`;
       pageElements.push(pageDiv);
     }
 
@@ -299,116 +382,20 @@ async function renderFlipbook(pdfData, taskId) {
     currentPageFlip = pageFlip;
     pageFlip.loadFromHTML(pageElements);
 
-    // 💡 監聽狀態：只要使用者正在觸控、拖曳或播放動畫，100% 凍結背景渲染
-    pageFlip.on('changeState', (e) => {
-      isUserInteracting = (e.data !== 'read');
-    });
-
+    // 💡 翻頁時觸發：動態更新視窗區域並回收記憶體
     pageFlip.on('flip', (e) => {
       const currentPageNum = e.data + 1;
       updatePageNumDisplay(currentPageNum, totalPagesCount);
+      updateRenderWindow(currentPageNum, taskId);
     });
 
-    const renderScale = Math.min(window.devicePixelRatio || 1, 1.25);
+    // 首次渲染第 1 頁與周圍頁面
+    showLoading('⚡ 正在載入封面...');
+    await updateRenderWindow(1, taskId);
 
-    async function renderSinglePage(pageNum) {
-      if (taskId !== currentLoadingTaskId || renderedPages.has(pageNum)) return;
-      
-      const page = await pdf.getPage(pageNum);
-      const viewport = page.getViewport({ scale: renderScale });
-
-      const canvas = document.createElement('canvas');
-      const context = canvas.getContext('2d');
-      canvas.height = viewport.height;
-      canvas.width = viewport.width;
-
-      await page.render({ canvasContext: context, viewport: viewport }).promise;
-
-      // 使用稍微提高壓縮率的 jpeg，繪製速度快上數倍
-      const imgBlob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.75));
-      if (!imgBlob || taskId !== currentLoadingTaskId) return;
-
-      const imgUrl = URL.createObjectURL(imgBlob);
-      currentBlobUrls.push(imgUrl);
-
-      const targetDiv = document.getElementById(`page-node-${pageNum}`);
-      if (targetDiv) {
-        targetDiv.innerHTML = '';
-        const img = document.createElement('img');
-        img.src = imgUrl;
-        img.alt = `第 ${pageNum} 頁`;
-        targetDiv.appendChild(img);
-        renderedPages.add(pageNum);
-      }
-    }
-
-    showLoading('⚡ 正在產生前幾頁...');
-    // 首要優先：立刻繪製前 3 頁供閱讀
-    const initPages = [1, 2, 3].filter(p => p <= totalPagesCount);
-    await Promise.all(initPages.map(p => renderSinglePage(p)));
-    
     if (taskId === currentLoadingTaskId) {
       hideLoading();
     }
-
-    // 💡 智慧背景排程：優先繪製「使用者正在看護的視窗周圍」，且使用 requestIdleCallback 在瀏覽器完全空閒時才繪製
-    const pendingPages = new Set();
-    for (let p = 1; p <= totalPagesCount; p++) {
-      if (!renderedPages.has(p)) pendingPages.add(p);
-    }
-
-    async function processQueue() {
-      while (pendingPages.size > 0) {
-        if (taskId !== currentLoadingTaskId) break;
-
-        // 1. 若正在翻頁/操作，暫停背景繪製
-        if (isUserInteracting) {
-          await new Promise(r => setTimeout(r, 200));
-          continue;
-        }
-
-        // 2. 智慧挑選：優先找當前頁面前後 3 頁內尚未繪製的頁面
-        const currentIdx = currentPageFlip ? (currentPageFlip.getCurrentPageIndex() + 1) : 1;
-        let targetPage = null;
-
-        for (let offset = -2; offset <= 3; offset++) {
-          const nearPage = currentIdx + offset;
-          if (pendingPages.has(nearPage)) {
-            targetPage = nearPage;
-            break;
-          }
-        }
-
-        // 順序後補
-        if (!targetPage) {
-          targetPage = pendingPages.values().next().value;
-        }
-
-        pendingPages.delete(targetPage);
-
-        // 3. 利用空閒時間繪製
-        await new Promise((resolve) => {
-          const runTask = async () => {
-            if (!isUserInteracting && taskId === currentLoadingTaskId) {
-              await renderSinglePage(targetPage);
-            } else if (taskId === currentLoadingTaskId) {
-              pendingPages.add(targetPage); // 被中斷則放回隊列
-            }
-            resolve();
-          };
-
-          if ('requestIdleCallback' in window) {
-            requestIdleCallback(() => runTask(), { timeout: 800 });
-          } else {
-            setTimeout(runTask, 100);
-          }
-        });
-
-        await new Promise(r => setTimeout(r, 80));
-      }
-    }
-
-    processQueue();
 
   } catch (err) {
     console.error("PDF 解析失敗:", err);
@@ -562,7 +549,10 @@ document.addEventListener('DOMContentLoaded', () => {
   if (pageSlider) {
     pageSlider.addEventListener('input', (e) => {
       const index = parseInt(e.target.value, 10) - 1;
-      if (currentPageFlip) currentPageFlip.turnToPage(index);
+      if (currentPageFlip) {
+        currentPageFlip.turnToPage(index);
+        updateRenderWindow(index + 1, currentLoadingTaskId);
+      }
     });
   }
 
