@@ -5,29 +5,30 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
   <title>土庫國小 3D 電子書閱讀器</title>
   <link rel="stylesheet" href="css/style.css">
+  <!-- PDF.js 與 PageFlip 3D 動畫庫 -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/page-flip/dist/js/page-flip.browser.js"></script>
 </head>
 <body>
 
-  <!-- 頂部列 -->
+  <!-- 頂部控制列 -->
   <header class="reader-header">
-    <div class="brand">📖 雙週報電子書</div>
+    <div class="brand">📖 雙週報</div>
     <div class="header-controls">
       <select id="gdrive-select">
-        <option value="">☁️ 載入雲端書庫中...</option>
+        <option value="">☁️ 載入書庫...</option>
       </select>
-      <button id="btn-toggle-upload" class="icon-btn" title="開啟/收合上傳區">📁 上傳區</button>
-      <button id="btn-fullscreen" class="icon-btn" title="全螢幕 (F)">⛶ 全螢幕</button>
+      <button id="btn-toggle-upload" class="icon-btn" title="開啟/收合上傳區">📁 <span class="btn-text">上傳</span></button>
+      <button id="btn-fullscreen" class="icon-btn" title="全螢幕 (F)">⛶ <span class="btn-text">全螢幕</span></button>
     </div>
   </header>
 
-  <!-- 上傳與連結區塊 -->
+  <!-- 拖曳與連結上傳區塊 (預設開啟書本後會自動隱藏) -->
   <div id="dropzone-section" class="dropzone-box">
     <div class="dropzone" id="dropzone">
       <div class="dropzone-icon">📚</div>
       <h2>將 PDF 檔案拖曳至此處</h2>
-      <p>或貼上 Google Drive 分享連結（檔案或資料夾）</p>
+      <p>或貼上 Google Drive 分享連結</p>
 
       <div class="url-input-container">
         <input type="text" id="gdrive-url-input" placeholder="貼上 Google Drive 連結..." />
@@ -46,13 +47,14 @@
   <!-- 閱讀主區域 -->
   <main class="flipbook-viewport">
     <div id="flipbook"></div>
+    <!-- 極速載入提示 overlay -->
     <div id="loading-overlay" style="display: none;">
       <div class="spinner"></div>
-      <div id="loading-text">⚡ 正在生成 3D 電子書...</div>
+      <div id="loading-text">⚡ 正在開啟電子書...</div>
     </div>
   </main>
 
-  <!-- 底部控制列 -->
+  <!-- 底部閱讀控制列 -->
   <footer class="reader-footer">
     <button id="btn-prev" class="nav-btn" title="上一頁 (←)">◀</button>
 
