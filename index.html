@@ -4,9 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
   <title>土庫國小 3D 電子書閱讀器</title>
-  <!-- 載入 CSS 樣式 -->
   <link rel="stylesheet" href="css/style.css">
-  <!-- 引入 PDF.js 與 St.PageFlip -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/page-flip/dist/js/page-flip.browser.js"></script>
 </head>
@@ -16,15 +14,16 @@
   <header class="reader-header">
     <div class="brand">📖 雙週報電子書</div>
     <div class="header-controls">
-      <!-- 自動讀取 Google Drive 資料夾內的 PDF 清單 -->
       <select id="gdrive-select">
-        <option value="">☁️ 讀取雲端書庫中...</option>
+        <option value="">☁️ 載入雲端書庫中...</option>
       </select>
+      <!-- 新增：切換上傳區塊顯示按鈕 -->
+      <button id="btn-toggle-upload" class="icon-btn" title="開啟/收合上傳區">📁 開啟/收合上傳區</button>
       <button id="btn-fullscreen" class="icon-btn" title="全螢幕 (F)">⛶ 全螢幕</button>
     </div>
   </header>
 
-  <!-- 上傳與連結開啟區塊 -->
+  <!-- 拖曳與連結上傳區塊 (開啟電子書後會自動隱藏) -->
   <div id="dropzone-section" class="dropzone-box">
     <div class="dropzone" id="dropzone">
       <div class="dropzone-icon">📚</div>
@@ -32,11 +31,7 @@
       <p>或貼上 Google Drive 分享連結（檔案或資料夾）</p>
 
       <div class="url-input-container">
-        <input 
-          type="text" 
-          id="gdrive-url-input" 
-          placeholder="貼上 Google Drive 連結 (例如資料夾或單一 PDF)..." 
-        />
+        <input type="text" id="gdrive-url-input" placeholder="貼上 Google Drive 連結..." />
         <button id="btn-load-url" class="btn-secondary">讀取連結</button>
       </div>
 
