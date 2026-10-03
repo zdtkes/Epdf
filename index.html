@@ -8,7 +8,6 @@
 </head>
 <body>
 
-  <!-- 控制列：音樂選單與開關 -->
   <header class="toolbar">
     <div class="music-controls">
       <label for="music-select">🎵 背景輕音樂：</label>
@@ -21,18 +20,18 @@
     </div>
   </header>
 
-  <!-- 翻頁電子書區域 -->
   <main class="book-container">
     <div id="flipbook"></div>
   </main>
 
-  <!-- 隱藏的 YouTube 播放器容器 -->
   <div id="youtube-player" style="display:none;"></div>
 
-  <!-- 引入 CDN 函式庫 -->
+  <!-- CDN 函式庫 -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/page-flip/dist/js/page-flip.browser.js"></script>
-  <script src="https://www.youtube.com/iframe_api"></script>
+  
+  <!-- 注意：先載入 app.js，再載入 YouTube API -->
   <script src="js/app.js"></script>
+  <script src="https://www.youtube.com/iframe_api"></script>
 </body>
 </html>
