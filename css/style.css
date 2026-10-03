@@ -139,6 +139,23 @@ body {
   margin-bottom: 12px;
 }
 
+/* 💡 強制啟用 GPU 硬體加速，防止翻頁時頁面閃爍與卡頓 */
+#flipbook, .stpageflip--container, .my-page {
+  will-change: transform;
+  transform: translateZ(0);
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
+
+.my-page img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
 @keyframes spin {
   0% { transform: rotate(0deg); }
   100% { transform: rotate(360deg); }
