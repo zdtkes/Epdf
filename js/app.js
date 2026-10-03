@@ -514,7 +514,57 @@ window.addEventListener('resize', () => {
 // 事件綁定
 document.addEventListener('DOMContentLoaded', () => {
   fetchDrivePDFList();
+// 📱 手機端手勢縮放 (雙指捏合 Pinch-to-Zoom + 雙擊放大 Double-Tap)
+  const viewport = document.querySelector('.flipbook-viewport');
+  let initialPinchDistance = null;
+  let initialScale = 1.0;
+  let lastTapTime = 0;
 
+  if (viewport) {
+    // 1. 觸控開始
+    viewport.addEventListener('touchstart', (e) => {
+      if (e.touches.length === 2) {
+        // 偵測到雙指，計算起始距離
+        initialPinchDistance = Math.hypot(
+          e.touches[0].clientX - e.touches[1].clientX,
+          e.touches[0].clientY - e.touches[1].clientY
+        );
+        initialScale = currentZoomScale;
+      } else if (e.touches.length === 1) {
+        // 偵測單指雙擊 (Double Tap)
+        const now = Date.now();
+        if (now - lastTapTime < 300) {
+          e.preventDefault();
+          if (currentZoomScale > 1.0) {
+            resetZoom(); // 已放大狀態 -> 還原 100%
+          } else {
+            applyZoom(1.6); // 原大小 -> 快速放大至 160%
+          }
+        }
+        lastTapTime = now;
+      }
+    }, { passive: false });
+
+    // 2. 雙指滑動中 (捏合/張開)
+    viewport.addEventListener('touchmove', (e) => {
+      if (e.touches.length === 2 && initialPinchDistance) {
+        e.preventDefault(); // 防止手機網頁著跟滾動
+        const currentDistance = Math.hypot(
+          e.touches[0].clientX - e.touches[1].clientX,
+          e.touches[0].clientY - e.touches[1].clientY
+        );
+        const factor = currentDistance / initialPinchDistance;
+        applyZoom(initialScale * factor);
+      }
+    }, { passive: false });
+
+    // 3. 觸控結束
+    viewport.addEventListener('touchend', (e) => {
+      if (e.touches.length < 2) {
+        initialPinchDistance = null;
+      }
+    });
+  }
   const btnZoomIn = document.getElementById('btn-zoom-in');
   const btnZoomOut = document.getElementById('btn-zoom-out');
   const btnZoomReset = document.getElementById('btn-zoom-reset');
