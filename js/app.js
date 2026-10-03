@@ -1,15 +1,54 @@
 // 設定 PDF.js Worker 資源路徑
 pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
-// 您已部署好的 Google Apps Script Web App 網址
-const GAS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycby-jnWDKo6ctErnZgjvLS32eN8v_MsRmTwT5XxTjEPD-jRYHPodVigOoE2XSaJjGG6LEg/exec";
+// 您更新後的 Google Apps Script Web App 網址
+const GAS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbycy5pkeglcKjmMye9WLE76mn6uNiBqqTJDky4Et3Pta5cKNowiwkpt6MvXPz4fEgA6oQ/exec";
 
 let currentPageFlip = null;
-let currentBlobUrls = []; // 用於記錄產生的 Blob URL，以便釋放記憶體
+let currentBlobUrls = [];
 
 /**
- * 載入並渲染 PDF 電子書
- * @param {string|Uint8Array} pdfSource - PDF 檔案網址或 Uint8Array 資料
+ * 將 Base64 字串轉為 Uint8Array (供 PDF.js 解析)
+ */
+function base64ToUint8Array(base64) {
+  const binaryString = window.atob(base64);
+  const len = binaryString.length;
+  const bytes = new Uint8Array(len);
+  for (let i = 0; i < len; i++) {
+    bytes[i] = binaryString.charCodeAt(i);
+  }
+  return bytes;
+}
+
+/**
+ * 透過 Google Apps Script 從雲端讀取 PDF 內容
+ */
+async function loadDrivePDF(fileId) {
+  const loadingTip = document.getElementById('loading-tip');
+  if (loadingTip) {
+    loadingTip.style.display = 'block';
+    loadingTip.textContent = '☁️ 正在從 Google Drive 下載 PDF...';
+  }
+
+  try {
+    const res = await fetch(`${GAS_WEB_APP_URL}?id=${fileId}`);
+    const result = await res.json();
+
+    if (result.status === "success" && result.data) {
+      const pdfBytes = base64ToUint8Array(result.data);
+      await loadPDF(pdfBytes);
+    } else {
+      throw new Error(result.message || "無法取得檔案內容");
+    }
+  } catch (err) {
+    console.error("下載雲端 PDF 失敗:", err);
+    alert("雲端 PDF 下載失敗，請確認該檔案大小與 Google Drive 的檢視權限。");
+    if (loadingTip) loadingTip.style.display = 'none';
+  }
+}
+
+/**
+ * 高速渲染 PDF 並轉為 3D 翻頁電子書
  */
 async function loadPDF(pdfSource) {
   const flipbookContainer = document.getElementById('flipbook');
@@ -20,54 +59,46 @@ async function loadPDF(pdfSource) {
     loadingTip.textContent = '⚡ 電子書準備中...';
   }
 
-  // 1. 銷毀舊的 PageFlip 實例與釋放舊 Blob URL
+  // 銷毀舊實例
   if (currentPageFlip) {
-    try {
-      currentPageFlip.destroy();
-    } catch (e) {
-      console.warn("銷毀舊 PageFlip 實例:", e);
-    }
+    try { currentPageFlip.destroy(); } catch (e) {}
     currentPageFlip = null;
   }
   
-  // 釋放記憶體中的舊圖片網址
+  // 釋放先前產生的 Blob 記憶體
   currentBlobUrls.forEach(url => URL.revokeObjectURL(url));
   currentBlobUrls = [];
 
-  if (flipbookContainer) {
-    flipbookContainer.innerHTML = '';
-  }
+  if (flipbookContainer) flipbookContainer.innerHTML = '';
 
   try {
-    // 2. 讀取 PDF 文件
     const loadingTask = pdfjsLib.getDocument(pdfSource);
     const pdf = await loadingTask.promise;
 
-    // 3. 初始化 PageFlip（標準 A4 比例 530 x 750）
+    // 初始化 PageFlip 實例（A4 比例）
     const pageFlip = new St.PageFlip(flipbookContainer, {
-      width: 530,          // 單頁寬度
-      height: 750,         // 單頁高度 (符合 A4 比例)
+      width: 530,
+      height: 750,
       size: "stretch",
       minWidth: 300,
       maxWidth: 800,
       minHeight: 424,
       maxHeight: 1131,
       maxShadowOpacity: 0.5,
-      showCover: true,     // 顯示封面
+      showCover: true,
       mobileScrollSupport: false
     });
 
     currentPageFlip = pageFlip;
     const pageElements = [];
 
-    // 4. 逐頁渲染畫面
+    // 逐頁渲染畫面
     for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
       if (loadingTip) {
         loadingTip.textContent = `📄 轉換頁面 (${pageNum}/${pdf.numPages})...`;
       }
 
       const page = await pdf.getPage(pageNum);
-      // scale: 1.3 兼顧高清晰度與渲染速度
       const viewport = page.getViewport({ scale: 1.3 });
 
       const canvas = document.createElement('canvas');
@@ -77,7 +108,7 @@ async function loadPDF(pdfSource) {
 
       await page.render({ canvasContext: context, viewport: viewport }).promise;
 
-      // 使用 Blob URL 替代 Base64，提升 3~5 倍渲染速度並防卡頓
+      // 使用 Blob URL 優化記憶體與渲染速度
       const imgUrl = await new Promise(resolve => {
         canvas.toBlob(blob => {
           const url = URL.createObjectURL(blob);
@@ -96,24 +127,20 @@ async function loadPDF(pdfSource) {
       
       pageElements.push(pageDiv);
 
-      // 釋放 UI 執行緒，確保瀏覽器不凍結
       await new Promise(resolve => setTimeout(resolve, 0));
     }
 
-    // 5. 載入所有頁面至電子書
     pageFlip.loadFromHTML(pageElements);
   } catch (err) {
-    console.error("PDF 載入失敗:", err);
-    alert("PDF 載入失敗，請確認檔案格式或 Google Drive 存取權限。");
+    console.error("PDF 渲染失敗:", err);
+    alert("PDF 載入失敗，請確認檔案格式是否正確。");
   } finally {
-    if (loadingTip) {
-      loadingTip.style.display = 'none';
-    }
+    if (loadingTip) loadingTip.style.display = 'none';
   }
 }
 
 /**
- * 自動抓取 Google Drive 資料夾內的 PDF 列表
+ * 讀取 Google Drive 資料夾內的 PDF 清單
  */
 async function fetchDrivePDFList() {
   const gdriveSelect = document.getElementById('gdrive-select');
@@ -131,7 +158,7 @@ async function fetchDrivePDFList() {
     gdriveSelect.innerHTML = '<option value="">-- 請選擇雲端電子書 --</option>';
     pdfList.forEach(pdf => {
       const opt = document.createElement('option');
-      opt.value = pdf.url;
+      opt.value = pdf.id; // 使用檔案 ID 進行存取
       opt.textContent = pdf.name;
       gdriveSelect.appendChild(opt);
     });
@@ -141,22 +168,22 @@ async function fetchDrivePDFList() {
   }
 }
 
-// 頁面元素載入完成後初始化事件
+// 頁面初始化
 document.addEventListener('DOMContentLoaded', () => {
-  // 1. 自動抓取 Google Drive PDF 列表
+  // 1. 抓取雲端書庫清單
   fetchDrivePDFList();
 
-  // 2. 切換 Google Drive 電子書選單
+  // 2. 切換雲端電子書
   const gdriveSelect = document.getElementById('gdrive-select');
   if (gdriveSelect) {
     gdriveSelect.addEventListener('change', (e) => {
       if (e.target.value) {
-        loadPDF(e.target.value);
+        loadDrivePDF(e.target.value);
       }
     });
   }
 
-  // 3. 本地 PDF 檔案上傳監聽
+  // 3. 本地上傳 PDF 監聽
   const pdfInput = document.getElementById('pdf-upload');
   if (pdfInput) {
     pdfInput.addEventListener('change', (e) => {
@@ -174,7 +201,7 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // 4. 背景音樂控制邏輯
+  // 4. 背景音樂播放控制
   const bgAudio = document.getElementById('bg-audio');
   const btnToggle = document.getElementById('btn-toggle-music');
   const musicSelect = document.getElementById('music-select');
@@ -185,7 +212,6 @@ document.addEventListener('DOMContentLoaded', () => {
         bgAudio.play().then(() => {
           btnToggle.textContent = '⏸ 暫停音樂';
         }).catch(err => {
-          console.error("音樂播放失敗:", err);
           alert("音樂播放失敗，請確認 audio/ 資料夾中是否存在該 MP3 檔案。");
         });
       } else {
@@ -198,11 +224,8 @@ document.addEventListener('DOMContentLoaded', () => {
   if (musicSelect && bgAudio) {
     musicSelect.addEventListener('change', (e) => {
       bgAudio.src = e.target.value;
-      bgAudio.play().then(() => {
-        if (btnToggle) btnToggle.textContent = '⏸ 暫停音樂';
-      }).catch(err => {
-        console.error("切換音樂失敗:", err);
-      });
+      bgAudio.play().catch(err => console.error(err));
+      if (btnToggle) btnToggle.textContent = '⏸ 暫停音樂';
     });
   }
 });
