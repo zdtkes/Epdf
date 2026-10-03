@@ -1,77 +1,9 @@
-* {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
-}
-
-body {
-  background-color: #222;
-  color: #fff;
-  font-family: sans-serif;
-  display: flex;
-  flex-direction: column;
-  height: 100vh;
-  overflow: hidden;
-}
-
-.toolbar {
-  background: rgba(0, 0, 0, 0.85);
-  padding: 10px 20px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  z-index: 10;
-  flex-wrap: wrap;
-  gap: 10px;
-}
-
-.left-controls, .music-controls {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
-/* 隱藏預設的檔案選擇按鈕 */
-#pdf-upload {
-  display: none;
-}
-
-/* 自訂上傳按鈕樣式 */
-.upload-btn {
-  background-color: #4CAF50;
-  color: white;
-  padding: 6px 14px;
-  border-radius: 4px;
-  cursor: pointer;
-  font-size: 14px;
-  transition: background-color 0.2s;
-}
-
-.upload-btn:hover {
-  background-color: #45a049;
-}
-
-#file-name {
-  font-size: 13px;
-  color: #ccc;
-}
-
-.music-controls select, .music-controls button {
-  padding: 6px 12px;
-  border-radius: 4px;
-  border: none;
-  cursor: pointer;
-}
-
 .book-container {
   flex: 1;
   display: flex;
   justify-content: center;
   align-items: center;
-  padding: 20px;
-  position: relative;
-}
-
-#flipbook {
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+  padding: 10px;
+  height: calc(100vh - 60px); /* 扣除頂部工具列高度 */
+  overflow: hidden;
 }
