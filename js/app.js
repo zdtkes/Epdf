@@ -2,15 +2,13 @@ pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs
 
 let currentPageFlip = null;
 
-// 渲染 PDF 函數（支援路徑或 ArrayBuffer）
 async function loadPDF(pdfData) {
   const flipbookContainer = document.getElementById('flipbook');
   const loadingTip = document.getElementById('loading-tip');
   
   loadingTip.style.display = 'block';
-  flipbookContainer.innerHTML = ''; // 清空上一本電子書的內容
+  flipbookContainer.innerHTML = '';
 
-  // 如果已有舊的翻頁實例，進行銷毀
   if (currentPageFlip) {
     try {
       currentPageFlip.destroy();
@@ -24,15 +22,23 @@ async function loadPDF(pdfData) {
     const loadingTask = pdfjsLib.getDocument(pdfData);
     const pdf = await loadingTask.promise;
 
-    // 建立 PageFlip 實例
+    // 1. 抓取第一頁的原始尺寸 (若為 A4，預設點數比例約為 595 x 842)
+    const firstPage = await pdf.getPage(1);
+    const originalViewport = firstPage.getViewport({ scale: 1.0 });
+    
+    // 計算比例，預設基底寬度設為 595 (標準 A4 點數寬度)
+    const baseWidth = 595;
+    const baseHeight = Math.round(baseWidth * (originalViewport.height / originalViewport.width));
+
+    // 2. 初始化 PageFlip（設定為原始 PDF / A4 比例）
     const pageFlip = new St.PageFlip(flipbookContainer, {
-      width: 550,
-      height: 733,
-      size: "stretch",
-      minWidth: 315,
-      maxWidth: 1000,
-      minHeight: 420,
-      maxHeight: 1350,
+      width: baseWidth,    // A4 寬度
+      height: baseHeight,  // A4 高度
+      size: "stretch",     // 自動縮放符合螢幕
+      minWidth: 300,
+      maxWidth: 900,
+      minHeight: 424,
+      maxHeight: 1273,
       maxShadowOpacity: 0.5,
       showCover: true,
       mobileScrollSupport: false
@@ -41,10 +47,12 @@ async function loadPDF(pdfData) {
     currentPageFlip = pageFlip;
     const pageElements = [];
 
-    // 逐頁渲染 PDF 為圖片
+    // 3. 逐頁渲染畫面
     for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
       const page = await pdf.getPage(pageNum);
-      const viewport = page.getViewport({ scale: 1.8 }); // 調整解析度與效能平衡
+      
+      // 使用 scale: 2.0 保持 A4 高解析度清晰度
+      const viewport = page.getViewport({ scale: 2.0 });
 
       const canvas = document.createElement('canvas');
       const context = canvas.getContext('2d');
@@ -54,7 +62,7 @@ async function loadPDF(pdfData) {
       await page.render({ canvasContext: context, viewport: viewport }).promise;
 
       const img = document.createElement('img');
-      img.src = canvas.toDataURL('image/jpeg', 0.85);
+      img.src = canvas.toDataURL('image/jpeg', 0.9);
       img.style.width = '100%';
       img.style.height = '100%';
       
@@ -73,50 +81,3 @@ async function loadPDF(pdfData) {
     loadingTip.style.display = 'none';
   }
 }
-
-// 事件監聽與初始化
-document.addEventListener('DOMContentLoaded', () => {
-  // 1. 預設載入伺服器上的 PDF（若無可留空）
-  loadPDF('./pdf/book.pdf');
-
-  // 2. 監聽使用者選擇本地 PDF 檔案
-  const pdfInput = document.getElementById('pdf-upload');
-  const fileNameDisplay = document.getElementById('file-name');
-
-  pdfInput.addEventListener('change', (e) => {
-    const file = e.target.files[0];
-    if (file && file.type === 'application/pdf') {
-      fileNameDisplay.textContent = `目前檔案：${file.name}`;
-      
-      const fileReader = new FileReader();
-      fileReader.onload = function () {
-        const typedarray = new Uint8Array(this.result);
-        loadPDF(typedarray); // 傳入讀取後的二進位資料渲染電子書
-      };
-      fileReader.readAsArrayBuffer(file);
-    } else {
-      alert("請選擇有效的 PDF 檔案！");
-    }
-  });
-
-  // 3. 背景音樂播放邏輯
-  const bgAudio = document.getElementById('bg-audio');
-  const btnToggle = document.getElementById('btn-toggle-music');
-  const musicSelect = document.getElementById('music-select');
-
-  btnToggle.addEventListener('click', () => {
-    if (bgAudio.paused) {
-      bgAudio.play();
-      btnToggle.textContent = '⏸ 暫停音樂';
-    } else {
-      bgAudio.pause();
-      btnToggle.textContent = '▶ 播放音樂';
-    }
-  });
-
-  musicSelect.addEventListener('change', (e) => {
-    bgAudio.src = e.target.value;
-    bgAudio.play();
-    btnToggle.textContent = '⏸ 暫停音樂';
-  });
-});
