@@ -1,247 +1,80 @@
-pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
+// === 方案二：貼上 Google Drive 連結邏輯 ===
 
-let currentPageFlip = null;
-let currentBlobUrls = [];
-let totalPagesCount = 0;
-
-// === DOM 元素綁定 ===
-const uploadView = document.getElementById('upload-view');
-const readerView = document.getElementById('reader-view');
-const dropzone = document.getElementById('dropzone');
-const fileInput = document.getElementById('file-input');
-const bookTitle = document.getElementById('book-title');
-const loadingOverlay = document.getElementById('loading-overlay');
-const loadingText = document.getElementById('loading-text');
-
-// === 拖曳上傳 (Drag and Drop) 邏輯 ===
-['dragenter', 'dragover'].forEach(eventName => {
-  dropzone.addEventListener(eventName, (e) => {
-    e.preventDefault();
-    dropzone.classList.add('dragover');
-  });
-});
-
-['dragleave', 'drop'].forEach(eventName => {
-  dropzone.addEventListener(eventName, (e) => {
-    e.preventDefault();
-    dropzone.classList.remove('dragover');
-  });
-});
-
-dropzone.addEventListener('drop', (e) => {
-  const files = e.dataTransfer.files;
-  if (files.length > 0 && files[0].type === 'application/pdf') {
-    handlePDFFile(files[0]);
+// 1. 綁定按鈕點擊事件
+document.getElementById('btn-load-url').addEventListener('click', () => {
+  const urlInput = document.getElementById('gdrive-url-input').value.trim();
+  if (urlInput) {
+    loadPdfFromDriveLink(urlInput);
   } else {
-    alert("請上傳有效的 PDF 檔案！");
+    alert('請先貼上 Google Drive 分享連結！');
   }
 });
 
-fileInput.addEventListener('change', (e) => {
-  if (e.target.files.length > 0) {
-    handlePDFFile(e.target.files[0]);
+// 2. 支援在輸入框按下 Enter 鍵直接執行
+document.getElementById('gdrive-url-input').addEventListener('keypress', (e) => {
+  if (e.key === 'Enter') {
+    document.getElementById('btn-load-url').click();
   }
 });
 
 /**
- * 處理並讀取本地 PDF 檔案
+ * 解析 Google Drive 分享連結並下載 PDF
  */
-function handlePDFFile(file) {
-  bookTitle.textContent = file.name;
-  
-  // 切換視圖至閱讀器
+async function loadPdfFromDriveLink(shareUrl) {
+  // 正則表達式：自動抓取各式 Google Drive 連結中的 File ID
+  let fileId = null;
+  const regD = /\/d\/([a-zA-Z0-9_-]+)/;
+  const regId = /[?&]id=([a-zA-Z0-9_-]+)/;
+
+  if (regD.test(shareUrl)) {
+    fileId = shareUrl.match(regD)[1];
+  } else if (regId.test(shareUrl)) {
+    fileId = shareUrl.match(regId)[1];
+  }
+
+  if (!fileId) {
+    alert("無法辨識此網址！請確認您輸入的是正確的 Google Drive 分享連結。");
+    return;
+  }
+
+  // 切換 UI 至載入畫面
+  bookTitle.textContent = "Google Drive 雲端電子書";
   uploadView.classList.remove('active');
   readerView.classList.add('active');
   loadingOverlay.style.display = 'flex';
-  loadingText.textContent = "⚡ 正在解析 PDF 檔案...";
+  loadingText.textContent = "⚡ 正在從 Google 雲端下載並生成 3D 電子書...";
 
-  const reader = new FileReader();
-  reader.onload = function () {
-    const pdfData = new Uint8Array(this.result);
-    renderFlipbook(pdfData);
-  };
-  reader.readAsArrayBuffer(file);
-}
+  // 構造 Google 直連下載 URL (使用 Google Content CDN 能大幅避免跨域 CORS 限制)
+  const downloadUrls = [
+    `https://lh3.googleusercontent.com/d/${fileId}`,
+    `https://docs.google.com/uc?export=download&id=${fileId}`
+  ];
 
-/**
- * 將 PDF 轉換為 3D 電子書的核心函式
- */
-async function renderFlipbook(pdfData) {
-  // 1. 銷毀舊實例與清理記憶體
-  if (currentPageFlip) {
-    try { currentPageFlip.destroy(); } catch (e) {}
-    currentPageFlip = null;
+  let arrayBuffer = null;
+  let fetchSuccess = false;
+
+  // 嘗試獲取檔案內容
+  for (const url of downloadUrls) {
+    try {
+      const response = await fetch(url);
+      if (response.ok) {
+        arrayBuffer = await response.arrayBuffer();
+        // 簡易檢查：確定有抓到合理的檔案大小
+        if (arrayBuffer.byteLength > 1000) {
+          fetchSuccess = true;
+          break;
+        }
+      }
+    } catch (err) {
+      console.warn("嘗試直連網址失敗，切換備用網址...", err);
+    }
   }
-  currentBlobUrls.forEach(url => URL.revokeObjectURL(url));
-  currentBlobUrls = [];
 
-  const flipbookContainer = document.getElementById('flipbook');
-  flipbookContainer.innerHTML = '';
-
-  try {
-    const loadingTask = pdfjsLib.getDocument({ data: pdfData });
-    const pdf = await loadingTask.promise;
-    totalPagesCount = pdf.numPages;
-
-    updateSliderUI(1, totalPagesCount);
-
-    // 2. 算出無裁切的最佳邊界 (扣除 Header 50px + Footer 56px)
-    const firstPage = await pdf.getPage(1);
-    const unscaledViewport = firstPage.getViewport({ scale: 1.0 });
-    const pdfAspectRatio = unscaledViewport.width / unscaledViewport.height;
-
-    const availHeight = Math.max(300, window.innerHeight - 116);
-    const availWidth = Math.max(300, window.innerWidth - 20);
-    const isMobile = window.innerWidth <= 768;
-
-    let pageW, pageH;
-    if (isMobile) {
-      if (availWidth / availHeight > pdfAspectRatio) {
-        pageH = availHeight;
-        pageW = Math.floor(pageH * pdfAspectRatio);
-      } else {
-        pageW = availWidth;
-        pageH = Math.floor(pageW / pdfAspectRatio);
-      }
-    } else {
-      const spreadRatio = 2 * pdfAspectRatio;
-      if (availWidth / availHeight > spreadRatio) {
-        pageH = availHeight;
-        pageW = Math.floor(pageH * pdfAspectRatio);
-      } else {
-        pageW = Math.floor(availWidth / 2);
-        pageH = Math.floor(pageW / pdfAspectRatio);
-      }
-    }
-
-    // 3. 建立 DOM 占位節點
-    const pageElements = [];
-    for (let i = 1; i <= totalPagesCount; i++) {
-      const pageDiv = document.createElement('div');
-      pageDiv.className = 'my-page';
-      pageDiv.id = `page-node-${i}`;
-      pageDiv.innerHTML = `<div style="color:#aaa; font-size:13px;">📄 第 ${i} 頁...</div>`;
-      pageElements.push(pageDiv);
-    }
-
-    // 4. 初始化 PageFlip 3D
-    const pageFlip = new St.PageFlip(flipbookContainer, {
-      width: pageW,
-      height: pageH,
-      size: "fixed",
-      showCover: true,
-      usePortrait: true, // 手機直立自動變單頁
-      clickToFlip: true
-    });
-
-    currentPageFlip = pageFlip;
-    pageFlip.loadFromHTML(pageElements);
-
-    // 監聽翻頁更新進度條
-    pageFlip.on('flip', (e) => {
-      const current = e.data + 1;
-      updatePageNumDisplay(current, totalPagesCount);
-    });
-
-    // 5. 漸進式渲染圖片 (Retina 2.0x 高畫質)
-    const renderScale = (window.devicePixelRatio && window.devicePixelRatio > 1) ? 2.0 : 1.5;
-
-    for (let pageNum = 1; pageNum <= totalPagesCount; pageNum++) {
-      const page = await pdf.getPage(pageNum);
-      const viewport = page.getViewport({ scale: renderScale });
-
-      const canvas = document.createElement('canvas');
-      const context = canvas.getContext('2d');
-      canvas.height = viewport.height;
-      canvas.width = viewport.width;
-
-      await page.render({ canvasContext: context, viewport: viewport }).promise;
-
-      const imgUrl = await new Promise(resolve => {
-        canvas.toBlob(blob => {
-          const url = URL.createObjectURL(blob);
-          currentBlobUrls.push(url);
-          resolve(url);
-        }, 'image/jpeg', 0.88);
-      });
-
-      const targetDiv = document.getElementById(`page-node-${pageNum}`);
-      if (targetDiv) {
-        targetDiv.innerHTML = '';
-        const img = document.createElement('img');
-        img.src = imgUrl;
-        img.alt = `第 ${pageNum} 頁`;
-        targetDiv.appendChild(img);
-      }
-
-      // 秒開：前兩頁繪製完畢立刻隱藏讀取動畫，開始享受閱讀！
-      if (pageNum === 2 || pageNum === totalPagesCount) {
-        loadingOverlay.style.display = 'none';
-      }
-
-      await new Promise(resolve => setTimeout(resolve, 10));
-    }
-
-  } catch (err) {
-    console.error("PDF 解析失敗:", err);
-    alert("無法讀取此 PDF 檔案，請確認檔案未損毀。");
+  if (fetchSuccess && arrayBuffer) {
+    // 成功下載！傳遞給第一階段寫好的 3D 翻頁繪製函式
+    renderFlipbook(new Uint8Array(arrayBuffer));
+  } else {
+    alert("讀取失敗！請確認：\n1. 該 Google Drive 檔案已開啟『知道連結的人皆可查看』權限。\n2. 該連結確實為 PDF 格式檔案。");
     loadingOverlay.style.display = 'none';
   }
 }
-
-// === 導覽控制與快捷鍵 ===
-function updatePageNumDisplay(current, total) {
-  document.getElementById('page-num').textContent = `${current} / ${total}`;
-  document.getElementById('page-slider').value = current;
-}
-
-function updateSliderUI(current, total) {
-  const slider = document.getElementById('page-slider');
-  slider.min = 1;
-  slider.max = total;
-  slider.value = current;
-  updatePageNumDisplay(current, total);
-}
-
-// 換一本檔案（返回上傳頁）
-document.getElementById('btn-reupload').addEventListener('click', () => {
-  readerView.classList.remove('active');
-  uploadView.classList.add('active');
-  fileInput.value = '';
-});
-
-// 翻頁按鈕
-document.getElementById('btn-prev').addEventListener('click', () => {
-  if (currentPageFlip) currentPageFlip.flipPrev();
-});
-
-document.getElementById('btn-next').addEventListener('click', () => {
-  if (currentPageFlip) currentPageFlip.flipNext();
-});
-
-// Slider 滑動跳頁
-document.getElementById('page-slider').addEventListener('input', (e) => {
-  const pageIndex = parseInt(e.target.value, 10) - 1;
-  if (currentPageFlip) currentPageFlip.turnToPage(pageIndex);
-});
-
-// 全螢幕切換
-document.getElementById('btn-fullscreen').addEventListener('click', () => {
-  if (!document.fullscreenElement) {
-    document.documentElement.requestFullscreen();
-  } else {
-    if (document.exitFullscreen) document.exitFullscreen();
-  }
-});
-
-// 鍵盤方向鍵快捷鍵
-document.addEventListener('keydown', (e) => {
-  if (!readerView.classList.contains('active')) return;
-  if (e.key === 'ArrowLeft' && currentPageFlip) {
-    currentPageFlip.flipPrev();
-  } else if (e.key === 'ArrowRight' && currentPageFlip) {
-    currentPageFlip.flipNext();
-  } else if (e.key === 'f' || e.key === 'F') {
-    document.getElementById('btn-fullscreen').click();
-  }
-});
