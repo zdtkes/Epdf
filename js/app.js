@@ -1,6 +1,5 @@
 pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
-// 最新 GAS 部署網址 (僅用於讀取檔案清單)
 const GAS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbx3SATCw9BdhW50U78iOypUJlUhgqiQkLPCrvYyeeDLbpyg1C1UbTpA3CPAtPQWBXTExA/exec";
 
 let currentPageFlip = null;
@@ -11,12 +10,10 @@ const loadingOverlay = document.getElementById('loading-overlay');
 const loadingText = document.getElementById('loading-text');
 
 /**
- * ⚡ 極速下載雲端 PDF (直連 Google CDN，不走 GAS 中轉)
+ * ⚡ 極速下載雲端 PDF
  */
 async function loadDrivePDF(fileId) {
   showLoading('⚡ 正在從 Google 雲端極速下載 PDF...');
-
-  // 1. 首選：Google 官方直連 CDN 網址 (支援 CORS 跨域與全速傳輸)
   const directCdnUrl = `https://lh3.googleusercontent.com/d/${fileId}`;
 
   try {
@@ -24,18 +21,16 @@ async function loadDrivePDF(fileId) {
     if (!response.ok) throw new Error(`HTTP 狀態碼 ${response.status}`);
 
     const arrayBuffer = await response.arrayBuffer();
-    // 下載完成，開始 3D 排版
     await renderFlipbook(new Uint8Array(arrayBuffer));
 
   } catch (err) {
-    console.warn("CDN 直連下載失敗，自動切換至備用 GAS 串流管道:", err);
-    // 2. 備用方案：若 CDN 直連被阻擋，自動降級走 GAS 分段下載
+    console.warn("CDN 直連失敗，切換至備用串流管道:", err);
     await loadDrivePDFviaGAS(fileId);
   }
 }
 
 /**
- * 備用方案：透過 GAS 代理分段下載
+ * 備用 GAS 下載管道
  */
 async function loadDrivePDFviaGAS(fileId) {
   try {
@@ -71,7 +66,7 @@ async function loadDrivePDFviaGAS(fileId) {
 }
 
 /**
- * 網址輸入解析
+ * 解析網址輸入
  */
 async function handleUrlInput(url) {
   const folderMatch = url.match(/\/folders\/([a-zA-Z0-9_-]+)/);
@@ -103,6 +98,12 @@ async function handleUrlInput(url) {
 async function renderFlipbook(pdfData) {
   showLoading('⚡ 正在生成 3D 電子書頁面...');
 
+  // 💡 自動隱藏上傳區域，騰出完整空間給電子書
+  const dropzoneSection = document.getElementById('dropzone-section');
+  if (dropzoneSection) {
+    dropzoneSection.style.display = 'none';
+  }
+
   if (currentPageFlip) {
     try { currentPageFlip.destroy(); } catch (e) {}
     currentPageFlip = null;
@@ -125,9 +126,10 @@ async function renderFlipbook(pdfData) {
     const unscaledViewport = firstPage.getViewport({ scale: 1.0 });
     const pdfAspectRatio = unscaledViewport.width / unscaledViewport.height;
 
-    const dropzoneBox = document.querySelector('.dropzone-box');
-    const navAndDropHeight = (dropzoneBox ? dropzoneBox.offsetHeight : 0) + 110;
-    const availHeight = Math.max(300, window.innerHeight - navAndDropHeight);
+    // 精確計算可用剩餘高度 (扣除 Header 50px 與 Footer 52px)
+    const navHeight = 50;
+    const footerHeight = 52;
+    const availHeight = Math.max(300, window.innerHeight - navHeight - footerHeight - 20);
     const availWidth = Math.max(300, window.innerWidth - 30);
     const isMobile = window.innerWidth <= 768;
 
@@ -206,7 +208,6 @@ async function renderFlipbook(pdfData) {
         targetDiv.appendChild(img);
       }
 
-      // 💡 繪製完第 2 頁即關閉載入視窗，達成秒開閱讀體驗
       if (pageNum === 2 || pageNum === totalPagesCount) {
         hideLoading();
       }
@@ -283,6 +284,17 @@ function updateSliderUI(current, total) {
 // 初始化綁定
 document.addEventListener('DOMContentLoaded', () => {
   fetchDrivePDFList();
+
+  // 手動開關上傳區塊
+  const btnToggleUpload = document.getElementById('btn-toggle-upload');
+  if (btnToggleUpload) {
+    btnToggleUpload.addEventListener('click', () => {
+      const dropzoneSection = document.getElementById('dropzone-section');
+      if (dropzoneSection) {
+        dropzoneSection.style.display = (dropzoneSection.style.display === 'none') ? 'flex' : 'none';
+      }
+    });
+  }
 
   const gdriveSelect = document.getElementById('gdrive-select');
   if (gdriveSelect) {
