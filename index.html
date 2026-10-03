@@ -1,61 +1,23 @@
-<!DOCTYPE html>
-<html lang="zh-TW">
-<head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>PDF 線上 3D 電子書閱讀器</title>
-  <link rel="stylesheet" href="css/style.css">
-  <!-- 引入 PDF.js 與 St.PageFlip 3D 翻頁動畫庫 -->
-  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/page-flip/dist/js/page-flip.browser.js"></script>
-</head>
-<body>
+<div class="dropzone" id="dropzone">
+  <div class="dropzone-icon">📚</div>
+  <h2>將 PDF 檔案拖曳至此處</h2>
+  <p>或選擇以下方式開啟電子書</p>
 
-  <!-- 1. 拖曳上傳視圖 (Upload View) -->
-  <div id="upload-view" class="view-screen active">
-    <div class="dropzone" id="dropzone">
-      <div class="dropzone-icon">📚</div>
-      <h2>將 PDF 檔案拖曳至此處</h2>
-      <p>或點擊下方按鈕選擇檔案（支援任意大小 PDF）</p>
-      <label class="btn-primary">
-        選擇 PDF 檔案
-        <input type="file" id="file-input" accept="application/pdf" hidden>
-      </label>
-    </div>
+  <!-- === 新增：Google Drive 連結輸入區 === -->
+  <div class="url-input-container">
+    <input 
+      type="text" 
+      id="gdrive-url-input" 
+      placeholder="https://drive.google.com/drive/folders/1kOjZbSDMHDtWzCaYJ7PXdha7WI6iyUlb" 
+    />
+    <button id="btn-load-url" class="btn-secondary">讀取連結</button>
   </div>
 
-  <!-- 2. 電子書閱讀視圖 (Reader View) -->
-  <div id="reader-view" class="view-screen">
-    <!-- 頂部控制列 -->
-    <header class="reader-header">
-      <button id="btn-reupload" class="icon-btn" title="換一本電子書">↩ 更換檔案</button>
-      <div id="book-title" class="book-title">電子書閱讀器</div>
-      <button id="btn-fullscreen" class="icon-btn" title="全螢幕閱讀 (F)">⛶ 全螢幕</button>
-    </header>
+  <div class="divider"><span>或</span></div>
 
-    <!-- 電子書展示主區域 -->
-    <main class="flipbook-viewport">
-      <div id="flipbook"></div>
-      <div id="loading-overlay">
-        <div class="spinner"></div>
-        <div id="loading-text">正在生成 3D 電子書...</div>
-      </div>
-    </main>
-
-    <!-- 底部閱讀工具列 -->
-    <footer class="reader-footer">
-      <button id="btn-prev" class="nav-btn" title="上一頁 (←)">◀</button>
-
-      <!-- 頁碼跳轉與進度條 -->
-      <div class="progress-container">
-        <span id="page-num">1 / 1</span>
-        <input type="range" id="page-slider" min="1" max="1" value="1">
-      </div>
-
-      <button id="btn-next" class="nav-btn" title="下一頁 (→)">▶</button>
-    </footer>
-  </div>
-
-  <script src="js/app.js"></script>
-</body>
-</html>
+  <!-- 原本的本地選擇檔案按鈕 -->
+  <label class="btn-primary">
+    選擇本機 PDF 檔案
+    <input type="file" id="file-input" accept="application/pdf" hidden>
+  </label>
+</div>
