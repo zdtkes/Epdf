@@ -8,35 +8,37 @@
 </head>
 <body>
 
-  <!-- 控制列：加入 PDF 上傳按鈕與音樂控制 -->
   <header class="toolbar">
     <div class="left-controls">
-      <!-- 隱藏原生 input，用 label 美化 -->
-      <label for="pdf-upload" class="upload-btn">📁 上傳 PDF 電子書</label>
+      <!-- 手動上傳 -->
+      <label for="pdf-upload" class="upload-btn">📁 本地上傳</label>
       <input type="file" id="pdf-upload" accept="application/pdf">
-      <span id="file-name">目前檔案：預設電子書</span>
+
+      <!-- Google Drive 雲端選單 -->
+      <label for="gdrive-select">☁️ 雲端書庫：</label>
+      <select id="gdrive-select">
+        <option value="">雲端書單讀取中...</option>
+      </select>
     </div>
 
     <div class="music-controls">
       <label for="music-select">🎵 背景輕音樂：</label>
       <select id="music-select">
-        <option value="https://cdn.pixabay.com/download/audio/2022/05/27/audio_1808fbf07a.mp3">舒緩鋼琴曲</option>
-        <option value="https://cdn.pixabay.com/download/audio/2022/03/15/audio_c8c8a73467.mp3">Lofi 閱讀爵士</option>
+        <option value="./audio/piano.mp3">舒緩鋼琴曲</option>
+        <option value="./audio/jazz.mp3">Lofi 閱讀爵士</option>
+        <option value="./audio/miyazaki.mp3">宮崎駿風格鋼琴輕音樂</option>
       </select>
       <button id="btn-toggle-music">▶ 播放音樂</button>
     </div>
   </header>
 
-  <!-- 翻頁電子書區域 -->
   <main class="book-container">
-    <div id="loading-tip" style="display:none; color: #fff;">📄 檔案讀取中，請稍候...</div>
+    <div id="loading-tip" style="display:none;">📄 電子書準備中...</div>
     <div id="flipbook"></div>
   </main>
 
-  <!-- 背景音樂音訊 -->
-  <audio id="bg-audio" loop src="https://cdn.pixabay.com/download/audio/2022/05/27/audio_1808fbf07a.mp3"></audio>
+  <audio id="bg-audio" loop src="./audio/piano.mp3"></audio>
 
-  <!-- 引入 CDN 套件 -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/page-flip/dist/js/page-flip.browser.js"></script>
   <script src="js/app.js"></script>
