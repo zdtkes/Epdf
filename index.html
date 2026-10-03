@@ -10,20 +10,19 @@
 </head>
 <body>
 
-  <!-- 頂部控制列 -->
+  <!-- 頂部列 -->
   <header class="reader-header">
     <div class="brand">📖 雙週報電子書</div>
     <div class="header-controls">
       <select id="gdrive-select">
         <option value="">☁️ 載入雲端書庫中...</option>
       </select>
-      <!-- 新增：切換上傳區塊顯示按鈕 -->
-      <button id="btn-toggle-upload" class="icon-btn" title="開啟/收合上傳區">📁 開啟/收合上傳區</button>
+      <button id="btn-toggle-upload" class="icon-btn" title="開啟/收合上傳區">📁 上傳區</button>
       <button id="btn-fullscreen" class="icon-btn" title="全螢幕 (F)">⛶ 全螢幕</button>
     </div>
   </header>
 
-  <!-- 拖曳與連結上傳區塊 (開啟電子書後會自動隱藏) -->
+  <!-- 上傳與連結區塊 -->
   <div id="dropzone-section" class="dropzone-box">
     <div class="dropzone" id="dropzone">
       <div class="dropzone-icon">📚</div>
@@ -44,7 +43,7 @@
     </div>
   </div>
 
-  <!-- 電子書展示主區域 -->
+  <!-- 閱讀主區域 -->
   <main class="flipbook-viewport">
     <div id="flipbook"></div>
     <div id="loading-overlay" style="display: none;">
@@ -53,7 +52,7 @@
     </div>
   </main>
 
-  <!-- 底部閱讀控制列 -->
+  <!-- 底部控制列 -->
   <footer class="reader-footer">
     <button id="btn-prev" class="nav-btn" title="上一頁 (←)">◀</button>
 
