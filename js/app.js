@@ -9,10 +9,14 @@ let currentBlobUrls = [];
 let totalPagesCount = 0;
 let currentLoadingTaskId = 0;
 
-// ⚡ 1. 記憶體快取 (RAM Cache - 當前頁面 0 秒秒開)
+// ⚡ 效能狀態管控
+let isUserInteracting = false; // 是否正在翻頁動畫中
+const renderedPages = new Set(); // 已繪製頁面紀錄
+
+// ⚡ 1. 記憶體快取 (RAM Cache)
 const pdfMemoryCache = new Map();
 
-// 💾 2. IndexedDB 本地永久磁碟 (關閉瀏覽器後依然存在，離線 0.1 秒秒開)
+// 💾 2. IndexedDB 本地永久磁碟
 const DB_NAME = 'PDFBookOfflineDB';
 const STORE_NAME = 'pdf_files';
 
@@ -101,14 +105,12 @@ function hideLoading() {
 async function loadDrivePDF(fileId) {
   const taskId = ++currentLoadingTaskId;
 
-  // 第一層：RAM 快取 (0秒)
   if (pdfMemoryCache.has(fileId)) {
     showLoading('⚡ 從記憶體秒開電子書...');
     await renderFlipbook(pdfMemoryCache.get(fileId), taskId);
     return;
   }
 
-  // 第二層：瀏覽器本地硬碟快取 (0.1秒秒開)
   showLoading('💾 檢查本地磁碟暫存...');
   const localDiskData = await getCachedPDFFromDisk(fileId);
   if (localDiskData) {
@@ -120,7 +122,6 @@ async function loadDrivePDF(fileId) {
     return;
   }
 
-  // 第三層：Cloudflare Worker 高速二進位直連串流下載
   try {
     showLoading('⚡ 正在透過高速代理連線...');
     const proxyUrl = `${CF_WORKER_URL}/?id=${fileId}`;
@@ -154,7 +155,6 @@ async function loadDrivePDF(fileId) {
       }
     }
 
-    // 合併二進位資料
     const finalBuffer = new Uint8Array(loadedBytes);
     let offset = 0;
     for (const chunk of chunks) {
@@ -164,7 +164,7 @@ async function loadDrivePDF(fileId) {
 
     if (taskId === currentLoadingTaskId) {
       pdfMemoryCache.set(fileId, finalBuffer);
-      await saveCachedPDFToDisk(fileId, finalBuffer); // 💾 寫入本機硬碟供下次秒開
+      await saveCachedPDFToDisk(fileId, finalBuffer);
       await renderFlipbook(finalBuffer, taskId);
     }
 
@@ -176,9 +176,6 @@ async function loadDrivePDF(fileId) {
   }
 }
 
-/**
- * 🛡️ GAS 傳輸備援機制
- */
 async function loadDrivePDFSafeGAS(fileId, taskId) {
   try {
     showLoading('⚡ 轉用 GAS 雲端傳輸...');
@@ -205,11 +202,12 @@ async function loadDrivePDFSafeGAS(fileId, taskId) {
 }
 
 /**
- * 📖 3D 電子書渲染引擎
+ * 📖 3D 電子書極速順暢渲染引擎
  */
 async function renderFlipbook(pdfData, taskId) {
   showLoading('⚡ 正在排版 3D 電子書...');
   resetZoom();
+  renderedPages.clear();
 
   const dropzoneSection = document.getElementById('dropzone-section');
   if (dropzoneSection) dropzoneSection.style.display = 'none';
@@ -237,7 +235,6 @@ async function renderFlipbook(pdfData, taskId) {
   viewportContainer.appendChild(flipbookContainer);
 
   try {
-    // 💡 使用 .slice(0) 建立獨立副本，防止 ArrayBuffer 被 Web Worker 抽離鎖定
     const pdfDataCopy = pdfData.slice(0);
     const loadingTask = pdfjsLib.getDocument({ data: pdfDataCopy });
     
@@ -302,14 +299,21 @@ async function renderFlipbook(pdfData, taskId) {
     currentPageFlip = pageFlip;
     pageFlip.loadFromHTML(pageElements);
 
+    // 💡 監聽狀態：只要使用者正在觸控、拖曳或播放動畫，100% 凍結背景渲染
+    pageFlip.on('changeState', (e) => {
+      isUserInteracting = (e.data !== 'read');
+    });
+
     pageFlip.on('flip', (e) => {
-      updatePageNumDisplay(e.data + 1, totalPagesCount);
+      const currentPageNum = e.data + 1;
+      updatePageNumDisplay(currentPageNum, totalPagesCount);
     });
 
     const renderScale = Math.min(window.devicePixelRatio || 1, 1.25);
 
     async function renderSinglePage(pageNum) {
-      if (taskId !== currentLoadingTaskId) return;
+      if (taskId !== currentLoadingTaskId || renderedPages.has(pageNum)) return;
+      
       const page = await pdf.getPage(pageNum);
       const viewport = page.getViewport({ scale: renderScale });
 
@@ -320,7 +324,8 @@ async function renderFlipbook(pdfData, taskId) {
 
       await page.render({ canvasContext: context, viewport: viewport }).promise;
 
-      const imgBlob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.8));
+      // 使用稍微提高壓縮率的 jpeg，繪製速度快上數倍
+      const imgBlob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.75));
       if (!imgBlob || taskId !== currentLoadingTaskId) return;
 
       const imgUrl = URL.createObjectURL(imgBlob);
@@ -333,28 +338,77 @@ async function renderFlipbook(pdfData, taskId) {
         img.src = imgUrl;
         img.alt = `第 ${pageNum} 頁`;
         targetDiv.appendChild(img);
+        renderedPages.add(pageNum);
       }
     }
 
-    showLoading('⚡ 正在產生封面...');
-    const initPageTasks = [renderSinglePage(1)];
-    if (totalPagesCount >= 2) {
-      initPageTasks.push(renderSinglePage(2));
-    }
-    await Promise.all(initPageTasks);
+    showLoading('⚡ 正在產生前幾頁...');
+    // 首要優先：立刻繪製前 3 頁供閱讀
+    const initPages = [1, 2, 3].filter(p => p <= totalPagesCount);
+    await Promise.all(initPages.map(p => renderSinglePage(p)));
     
     if (taskId === currentLoadingTaskId) {
       hideLoading();
     }
 
-    // 💡 背景頁面繪製：放大間隔時間至 120ms，讓出 CPU 資源維護翻頁順暢
-    (async () => {
-      for (let p = 3; p <= totalPagesCount; p++) {
+    // 💡 智慧背景排程：優先繪製「使用者正在看護的視窗周圍」，且使用 requestIdleCallback 在瀏覽器完全空閒時才繪製
+    const pendingPages = new Set();
+    for (let p = 1; p <= totalPagesCount; p++) {
+      if (!renderedPages.has(p)) pendingPages.add(p);
+    }
+
+    async function processQueue() {
+      while (pendingPages.size > 0) {
         if (taskId !== currentLoadingTaskId) break;
-        await renderSinglePage(p);
-        await new Promise(r => setTimeout(r, 120));
+
+        // 1. 若正在翻頁/操作，暫停背景繪製
+        if (isUserInteracting) {
+          await new Promise(r => setTimeout(r, 200));
+          continue;
+        }
+
+        // 2. 智慧挑選：優先找當前頁面前後 3 頁內尚未繪製的頁面
+        const currentIdx = currentPageFlip ? (currentPageFlip.getCurrentPageIndex() + 1) : 1;
+        let targetPage = null;
+
+        for (let offset = -2; offset <= 3; offset++) {
+          const nearPage = currentIdx + offset;
+          if (pendingPages.has(nearPage)) {
+            targetPage = nearPage;
+            break;
+          }
+        }
+
+        // 順序後補
+        if (!targetPage) {
+          targetPage = pendingPages.values().next().value;
+        }
+
+        pendingPages.delete(targetPage);
+
+        // 3. 利用空閒時間繪製
+        await new Promise((resolve) => {
+          const runTask = async () => {
+            if (!isUserInteracting && taskId === currentLoadingTaskId) {
+              await renderSinglePage(targetPage);
+            } else if (taskId === currentLoadingTaskId) {
+              pendingPages.add(targetPage); // 被中斷則放回隊列
+            }
+            resolve();
+          };
+
+          if ('requestIdleCallback' in window) {
+            requestIdleCallback(() => runTask(), { timeout: 800 });
+          } else {
+            setTimeout(runTask, 100);
+          }
+        });
+
+        await new Promise(r => setTimeout(r, 80));
       }
-    })();
+    }
+
+    processQueue();
 
   } catch (err) {
     console.error("PDF 解析失敗:", err);
@@ -523,7 +577,6 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // 💡 全螢幕切換/退出時自動重置縮放並重新計算 3D 佈局
   document.addEventListener('fullscreenchange', () => {
     resetZoom();
     if (currentPageFlip) {
