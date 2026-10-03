@@ -190,3 +190,57 @@ body {
   user-select: none;
   -webkit-user-drag: none;
 }
+
+/* 容器防溢出 */
+body, html {
+  margin: 0;
+  padding: 0;
+  width: 100%;
+  height: 100%;
+  overflow: hidden; /* 防止手機上下滑動頁面 */
+  touch-action: manipulation;
+}
+
+.flipbook-viewport {
+  width: 100%;
+  height: calc(100vh - 110px); /* 扣除上下工具列高度 */
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  position: relative;
+  overflow: hidden;
+}
+
+#flipbook {
+  margin: 0 auto;
+  transition: transform 0.2s ease-out;
+}
+
+/* 頁面與圖片防爆 */
+.my-page {
+  background-color: #ffffff;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  box-shadow: 0 0 10px rgba(0,0,0,0.1);
+}
+
+.my-page img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain; /* 確保圖片完全自適應且不變形 */
+  display: block;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+.page-skeleton {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background-color: #f8f9fa;
+  color: #6c757d;
+  font-size: 14px;
+}
