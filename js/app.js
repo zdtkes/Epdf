@@ -1,6 +1,5 @@
 pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
-// ⚡ 已替換為最新的 GAS Web App 網址
 const GAS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzi7xUsWCMSDul7rMNiO-chdg78gmqkCCRaZN_Xw6HSQY4J5lSCciNDbMIT89qahJky/exec";
 
 let currentPageFlip = null;
@@ -9,8 +8,56 @@ let currentBlobUrls = [];
 let totalPagesCount = 0;
 let currentLoadingTaskId = 0;
 
-// ⚡ 1. 記憶體秒開快取 (File ID -> Uint8Array)
+// ⚡ 1. 記憶體快取 (RAM Cache - 當前頁面運行中 0 秒)
 const pdfMemoryCache = new Map();
+
+// 💾 2. IndexedDB 本地永久磁碟資料庫 (重新整理/關閉瀏覽器後依然存在，0.1 秒秒開)
+const DB_NAME = 'PDFBookOfflineDB';
+const STORE_NAME = 'pdf_files';
+
+function openDB() {
+  return new Promise((resolve, reject) => {
+    const req = indexedDB.open(DB_NAME, 1);
+    req.onupgradeneeded = (e) => {
+      const db = e.target.result;
+      if (!db.objectStoreNames.contains(STORE_NAME)) {
+        db.createObjectStore(STORE_NAME);
+      }
+    };
+    req.onsuccess = () => resolve(req.result);
+    req.onerror = () => reject(req.error);
+  });
+}
+
+async function getCachedPDFFromDisk(fileId) {
+  try {
+    const db = await openDB();
+    return new Promise((resolve) => {
+      const tx = db.transaction(STORE_NAME, 'readonly');
+      const store = tx.objectStore(STORE_NAME);
+      const req = store.get(fileId);
+      req.onsuccess = () => resolve(req.result || null);
+      req.onerror = () => resolve(null);
+    });
+  } catch (e) {
+    return null;
+  }
+}
+
+async function saveCachedPDFToDisk(fileId, uint8Data) {
+  try {
+    const db = await openDB();
+    return new Promise((resolve) => {
+      const tx = db.transaction(STORE_NAME, 'readwrite');
+      const store = tx.objectStore(STORE_NAME);
+      store.put(uint8Data, fileId);
+      tx.oncomplete = () => resolve(true);
+      tx.onerror = () => resolve(false);
+    });
+  } catch (e) {
+    return false;
+  }
+}
 
 // 全域縮放狀態
 let currentZoomScale = 1.0;
@@ -48,19 +95,32 @@ function hideLoading() {
 }
 
 /**
- * ⚡ 極速 PDF 載入器 (快取優先 + 單次直傳 + 控頻備援)
+ * ⚡ 三層極速載入器 (RAM 快取 -> 本地硬碟磁碟快取 -> 雲端下載)
  */
 async function loadDrivePDF(fileId) {
   const taskId = ++currentLoadingTaskId;
 
-  // 檢查記憶體快取：若已看過，0 秒瞬間開啟
+  // 第一層：檢查記憶體快取 (RAM - 0秒)
   if (pdfMemoryCache.has(fileId)) {
-    showLoading('⚡ 從快取秒開電子書...');
+    showLoading('⚡ 從記憶體秒開電子書...');
     await renderFlipbook(pdfMemoryCache.get(fileId), taskId);
     return;
   }
 
-  showLoading('⚡ 正在載入 PDF...');
+  // 第二層：檢查瀏覽器本地硬碟 (IndexedDB - 0.1秒離線秒開)
+  showLoading('💾 檢查本地磁碟暫存...');
+  const localDiskData = await getCachedPDFFromDisk(fileId);
+  if (localDiskData) {
+    pdfMemoryCache.set(fileId, localDiskData); // 載入記憶體
+    showLoading('⚡ 從本機磁碟秒開電子書...');
+    if (taskId === currentLoadingTaskId) {
+      await renderFlipbook(localDiskData, taskId);
+    }
+    return;
+  }
+
+  // 第三層：雲端下載 (首次閱讀)
+  showLoading('⚡ 正在從雲端下載 PDF...');
 
   // 1. CDN 直連嘗試
   const cdnUrl = `https://lh3.googleusercontent.com/d/${fileId}`;
@@ -75,7 +135,8 @@ async function loadDrivePDF(fileId) {
       const buf = await res.arrayBuffer();
       const bytes = new Uint8Array(buf);
       if (bytes[0] === 0x25 && bytes[1] === 0x50) { // %PDF
-        pdfMemoryCache.set(fileId, bytes); // 存入快取
+        pdfMemoryCache.set(fileId, bytes);
+        await saveCachedPDFToDisk(fileId, bytes); // 💾 儲存至本機硬碟
         if (taskId === currentLoadingTaskId) {
           await renderFlipbook(bytes, taskId);
         }
@@ -83,7 +144,7 @@ async function loadDrivePDF(fileId) {
       }
     }
   } catch (e) {
-    console.warn("CDN 直連失敗，轉用 GAS 極速下載...");
+    console.warn("CDN 直連失敗，轉用 GAS 傳輸...");
   }
 
   // 2. GAS 下載
@@ -93,11 +154,10 @@ async function loadDrivePDF(fileId) {
 }
 
 /**
- * 🚀 GAS 傳輸引擎 (優先單次整檔傳輸，避免多回合 HTTP 延遲)
+ * 🚀 GAS 傳輸引擎
  */
 async function loadDrivePDFSafeGAS(fileId, taskId) {
   try {
-    // 優先嘗試單次全檔下載
     showLoading('⚡ 雲端傳輸中...');
     const res = await fetch(`${GAS_WEB_APP_URL}?id=${fileId}`);
     const data = await res.json();
@@ -110,12 +170,12 @@ async function loadDrivePDFSafeGAS(fileId, taskId) {
       for (let i = 0; i < binaryStr.length; i++) {
         bytes[i] = binaryStr.charCodeAt(i);
       }
-      pdfMemoryCache.set(fileId, bytes); // 存入快取
+      pdfMemoryCache.set(fileId, bytes);
+      await saveCachedPDFToDisk(fileId, bytes); // 💾 儲存至本機硬碟
       await renderFlipbook(bytes, taskId);
       return;
     }
 
-    // 若檔案過大，自動退回分段控頻下載
     if (data.status === "error" && data.message && data.message.includes("meta")) {
       await loadDrivePDFChunkedGAS(fileId, taskId);
     } else {
@@ -123,7 +183,6 @@ async function loadDrivePDFSafeGAS(fileId, taskId) {
     }
 
   } catch (err) {
-    // 備用：分段控頻池下載
     if (taskId === currentLoadingTaskId) {
       await loadDrivePDFChunkedGAS(fileId, taskId);
     }
@@ -189,7 +248,8 @@ async function loadDrivePDFChunkedGAS(fileId, taskId) {
     await Promise.all(executing);
 
     if (taskId === currentLoadingTaskId) {
-      pdfMemoryCache.set(fileId, finalBuffer); // 存入快取
+      pdfMemoryCache.set(fileId, finalBuffer);
+      await saveCachedPDFToDisk(fileId, finalBuffer); // 💾 儲存至本機硬碟
       await renderFlipbook(finalBuffer, taskId);
     }
 
@@ -331,7 +391,6 @@ async function renderFlipbook(pdfData, taskId) {
       }
     }
 
-    // ⏩ 雙頁並行同時繪製
     showLoading('⚡ 正在產生封面...');
     const initPageTasks = [renderSinglePage(1)];
     if (totalPagesCount >= 2) {
@@ -343,7 +402,6 @@ async function renderFlipbook(pdfData, taskId) {
       hideLoading();
     }
 
-    // 背景靜默繪製剩餘頁面
     (async () => {
       for (let p = 3; p <= totalPagesCount; p++) {
         if (taskId !== currentLoadingTaskId) break;
