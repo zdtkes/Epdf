@@ -1,7 +1,7 @@
 pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
-// 您已部署好的 GAS 網址
-const GAS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbycy5pkeglcKjmMye9WLE76mn6uNiBqqTJDky4Et3Pta5cKNowiwkpt6MvXPz4fEgA6oQ/exec";
+// 更新為您最新的 GAS 部署網址
+const GAS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbx3SATCw9BdhW50U78iOypUJlUhgqiQkLPCrvYyeeDLbpyg1C1UbTpA3CPAtPQWBXTExA/exec";
 
 let currentPageFlip = null;
 let currentBlobUrls = [];
