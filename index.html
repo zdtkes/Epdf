@@ -1,0 +1,35 @@
+<!DOCTYPE html>
+<html lang="zh-TW">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>PDF 電子書與背景音樂</title>
+  <link rel="stylesheet" href="style.css">
+  
+  <!-- PDF.js 與 PageFlip 函式庫 CDN -->
+  <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/2.16.105/pdf.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/page-flip@2.0.7/build/js/page-flip.browser.js"></script>
+</head>
+<body>
+
+  <!-- 控制欄 -->
+  <div class="toolbar">
+    <input type="file" id="pdf-input" accept="application/pdf">
+    <button id="prev-btn">上一頁</button>
+    <button id="next-btn">下一頁</button>
+    <button id="music-btn">🎵 播放輕音樂</button>
+  </div>
+
+  <!-- 翻頁容器 -->
+  <div class="container">
+    <div id="flipbook"></div>
+  </div>
+
+  <!-- YouTube 隱藏播放器 -->
+  <div id="youtube-player" style="display:none;"></div>
+
+  <!-- YouTube API & 主邏輯 -->
+  <script src="https://www.youtube.com/iframe_api"></script>
+  <script src="app.js"></script>
+</body>
+</html>
