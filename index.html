@@ -5,13 +5,12 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
   <title>土庫國小 3D 電子書閱讀器</title>
   <link rel="stylesheet" href="css/style.css">
-  <!-- PDF.js 與 PageFlip 3D 動畫庫 -->
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/page-flip/dist/js/page-flip.browser.js"></script>
 </head>
 <body>
 
-  <!-- 頂部控制列 -->
+  <!-- 頂部列 -->
   <header class="reader-header">
     <div class="brand">📖 雙週報</div>
     <div class="header-controls">
@@ -23,7 +22,7 @@
     </div>
   </header>
 
-  <!-- 拖曳與連結上傳區塊 (預設開啟書本後會自動隱藏) -->
+  <!-- 拖曳與連結上傳區塊 -->
   <div id="dropzone-section" class="dropzone-box">
     <div class="dropzone" id="dropzone">
       <div class="dropzone-icon">📚</div>
@@ -47,14 +46,13 @@
   <!-- 閱讀主區域 -->
   <main class="flipbook-viewport">
     <div id="flipbook"></div>
-    <!-- 極速載入提示 overlay -->
     <div id="loading-overlay" style="display: none;">
       <div class="spinner"></div>
       <div id="loading-text">⚡ 正在開啟電子書...</div>
     </div>
   </main>
 
-  <!-- 底部閱讀控制列 -->
+  <!-- 底部控制列 -->
   <footer class="reader-footer">
     <button id="btn-prev" class="nav-btn" title="上一頁 (←)">◀</button>
 
