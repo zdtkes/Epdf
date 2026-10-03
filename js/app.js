@@ -1,6 +1,6 @@
 pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
-// 您已部署好且包含資料夾 ID 的 GAS 網址
+// 您已部署好的 GAS 網址
 const GAS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbycy5pkeglcKjmMye9WLE76mn6uNiBqqTJDky4Et3Pta5cKNowiwkpt6MvXPz4fEgA6oQ/exec";
 
 let currentPageFlip = null;
@@ -11,17 +11,19 @@ const loadingOverlay = document.getElementById('loading-overlay');
 const loadingText = document.getElementById('loading-text');
 
 /**
- * 分段讀取雲端 PDF (支援 >25MB 大檔案)
+ * 分段讀取雲端 PDF (支援大檔案)
  */
 async function loadDrivePDF(fileId) {
   showLoading('☁️ 正在連接 Google Drive...');
   try {
     const metaRes = await fetch(`${GAS_WEB_APP_URL}?id=${fileId}&action=meta`);
+    if (!metaRes.ok) throw new Error(`HTTP 錯誤: ${metaRes.status}`);
+    
     const meta = await metaRes.json();
     if (meta.status === "error") throw new Error(meta.message);
 
     const totalSize = meta.size;
-    const chunkSize = 3 * 1024 * 1024; // 3MB chunk
+    const chunkSize = 3 * 1024 * 1024;
     const finalBuffer = new Uint8Array(totalSize);
     let loadedBytes = 0;
 
@@ -42,27 +44,25 @@ async function loadDrivePDF(fileId) {
 
     await renderFlipbook(finalBuffer);
   } catch (err) {
-    alert("雲端 PDF 開啟失敗：" + err.message);
+    console.error("下載 PDF 失敗:", err);
+    alert("雲端 PDF 開啟失敗，原因：" + err.message);
     hideLoading();
   }
 }
 
 /**
- * 智慧解析輸入框網址（支援資料夾或單檔）
+ * 網址輸入解析
  */
 async function handleUrlInput(url) {
-  // 1. 判斷是否為「資料夾」網址
   const folderMatch = url.match(/\/folders\/([a-zA-Z0-9_-]+)/);
   if (folderMatch) {
     showLoading("📁 讀取 Google Drive 資料夾內容...");
-    // 重新觸發雲端書單抓取
-    fetchDrivePDFList();
+    await fetchDrivePDFList();
     hideLoading();
-    alert("已自動載入資料夾內的 PDF 書單！請從右上角「雲端書庫」選單切換閱讀。");
+    alert("已載入資料夾內的 PDF 書單！請從右上角「雲端書庫」選單選擇閱讀。");
     return;
   }
 
-  // 2. 判斷是否為「單一檔案」網址
   let fileId = null;
   const regD = /\/d\/([a-zA-Z0-9_-]+)/;
   const regId = /[?&]id=([a-zA-Z0-9_-]+)/;
@@ -105,7 +105,8 @@ async function renderFlipbook(pdfData) {
     const unscaledViewport = firstPage.getViewport({ scale: 1.0 });
     const pdfAspectRatio = unscaledViewport.width / unscaledViewport.height;
 
-    const navAndDropHeight = document.querySelector('.dropzone-box').offsetHeight + 105;
+    const dropzoneBox = document.querySelector('.dropzone-box');
+    const navAndDropHeight = (dropzoneBox ? dropzoneBox.offsetHeight : 0) + 110;
     const availHeight = Math.max(300, window.innerHeight - navAndDropHeight);
     const availWidth = Math.max(300, window.innerWidth - 30);
     const isMobile = window.innerWidth <= 768;
@@ -193,14 +194,14 @@ async function renderFlipbook(pdfData) {
     }
 
   } catch (err) {
-    console.error("PDF 載入失敗:", err);
+    console.error("PDF 渲染失敗:", err);
     alert("PDF 檔案解析失敗。");
     hideLoading();
   }
 }
 
 /**
- * 自動抓取 Google Drive 資料夾清單
+ * 讀取 Google Drive 資料夾內的 PDF 清單
  */
 async function fetchDrivePDFList() {
   const gdriveSelect = document.getElementById('gdrive-select');
@@ -208,6 +209,10 @@ async function fetchDrivePDFList() {
 
   try {
     const res = await fetch(GAS_WEB_APP_URL);
+    if (!res.ok) {
+      throw new Error(`伺服器回應狀態碼: ${res.status}`);
+    }
+
     const pdfList = await res.json();
 
     if (!Array.isArray(pdfList) || pdfList.length === 0) {
@@ -223,77 +228,100 @@ async function fetchDrivePDFList() {
       gdriveSelect.appendChild(opt);
     });
   } catch (err) {
-    console.error("讀取雲端清單失敗:", err);
-    gdriveSelect.innerHTML = '<option value="">雲端書單讀取失敗</option>';
+    console.error("讀取雲端清單失敗，具體原因:", err);
+    gdriveSelect.innerHTML = '<option value="">雲端書單讀取失敗 (請檢查權限)</option>';
   }
 }
 
 function showLoading(msg) {
-  loadingOverlay.style.display = 'flex';
-  loadingText.textContent = msg;
+  if (loadingOverlay) {
+    loadingOverlay.style.display = 'flex';
+    if (loadingText) loadingText.textContent = msg;
+  }
 }
 
 function hideLoading() {
-  loadingOverlay.style.display = 'none';
+  if (loadingOverlay) loadingOverlay.style.display = 'none';
 }
 
 function updatePageNumDisplay(current, total) {
-  document.getElementById('page-num').textContent = `${current} / ${total}`;
-  document.getElementById('page-slider').value = current;
+  const pNum = document.getElementById('page-num');
+  const pSlider = document.getElementById('page-slider');
+  if (pNum) pNum.textContent = `${current} / ${total}`;
+  if (pSlider) pSlider.value = current;
 }
 
 function updateSliderUI(current, total) {
   const slider = document.getElementById('page-slider');
-  slider.min = 1;
-  slider.max = total;
-  slider.value = current;
+  if (slider) {
+    slider.min = 1;
+    slider.max = total;
+    slider.value = current;
+  }
   updatePageNumDisplay(current, total);
 }
 
-// 事件綁定
+// 初始化
 document.addEventListener('DOMContentLoaded', () => {
   fetchDrivePDFList();
 
-  // 1. 雲端選單切換
-  document.getElementById('gdrive-select').addEventListener('change', (e) => {
-    if (e.target.value) loadDrivePDF(e.target.value);
-  });
+  const gdriveSelect = document.getElementById('gdrive-select');
+  if (gdriveSelect) {
+    gdriveSelect.addEventListener('change', (e) => {
+      if (e.target.value) loadDrivePDF(e.target.value);
+    });
+  }
 
-  // 2. 貼上網址讀取
-  document.getElementById('btn-load-url').addEventListener('click', () => {
-    const url = document.getElementById('gdrive-url-input').value.trim();
-    if (url) handleUrlInput(url);
-  });
+  const btnLoadUrl = document.getElementById('btn-load-url');
+  if (btnLoadUrl) {
+    btnLoadUrl.addEventListener('click', () => {
+      const urlInput = document.getElementById('gdrive-url-input');
+      if (urlInput && urlInput.value.trim()) handleUrlInput(urlInput.value.trim());
+    });
+  }
 
-  // 3. 本地上傳
-  document.getElementById('file-input').addEventListener('change', (e) => {
-    const file = e.target.files[0];
-    if (file && file.type === 'application/pdf') {
-      const reader = new FileReader();
-      reader.onload = function() { renderFlipbook(new Uint8Array(this.result)); };
-      reader.readAsArrayBuffer(file);
-    }
-  });
+  const fileInput = document.getElementById('file-input');
+  if (fileInput) {
+    fileInput.addEventListener('change', (e) => {
+      const file = e.target.files[0];
+      if (file && file.type === 'application/pdf') {
+        const reader = new FileReader();
+        reader.onload = function() { renderFlipbook(new Uint8Array(this.result)); };
+        reader.readAsArrayBuffer(file);
+      }
+    });
+  }
 
-  // 4. 閱讀介面控制 (上一頁 / 下一頁 / 滑動條 / 全螢幕)
-  document.getElementById('btn-prev').addEventListener('click', () => {
-    if (currentPageFlip) currentPageFlip.flipPrev();
-  });
+  const btnPrev = document.getElementById('btn-prev');
+  if (btnPrev) {
+    btnPrev.addEventListener('click', () => {
+      if (currentPageFlip) currentPageFlip.flipPrev();
+    });
+  }
 
-  document.getElementById('btn-next').addEventListener('click', () => {
-    if (currentPageFlip) currentPageFlip.flipNext();
-  });
+  const btnNext = document.getElementById('btn-next');
+  if (btnNext) {
+    btnNext.addEventListener('click', () => {
+      if (currentPageFlip) currentPageFlip.flipNext();
+    });
+  }
 
-  document.getElementById('page-slider').addEventListener('input', (e) => {
-    const index = parseInt(e.target.value, 10) - 1;
-    if (currentPageFlip) currentPageFlip.turnToPage(index);
-  });
+  const pageSlider = document.getElementById('page-slider');
+  if (pageSlider) {
+    pageSlider.addEventListener('input', (e) => {
+      const index = parseInt(e.target.value, 10) - 1;
+      if (currentPageFlip) currentPageFlip.turnToPage(index);
+    });
+  }
 
-  document.getElementById('btn-fullscreen').addEventListener('click', () => {
-    if (!document.fullscreenElement) {
-      document.documentElement.requestFullscreen();
-    } else {
-      if (document.exitFullscreen) document.exitFullscreen();
-    }
-  });
+  const btnFullscreen = document.getElementById('btn-fullscreen');
+  if (btnFullscreen) {
+    btnFullscreen.addEventListener('click', () => {
+      if (!document.fullscreenElement) {
+        document.documentElement.requestFullscreen();
+      } else {
+        if (document.exitFullscreen) document.exitFullscreen();
+      }
+    });
+  }
 });
