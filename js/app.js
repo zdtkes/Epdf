@@ -1,54 +1,59 @@
-// 設定 PDF.js Worker 資源路徑
 pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
-// Google Apps Script Web App 網址
 const GAS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbycy5pkeglcKjmMye9WLE76mn6uNiBqqTJDky4Et3Pta5cKNowiwkpt6MvXPz4fEgA6oQ/exec";
 
 let currentPageFlip = null;
 let currentBlobUrls = [];
 
 /**
- * 將 Base64 字串轉為 Uint8Array
- */
-function base64ToUint8Array(base64) {
-  const binaryString = window.atob(base64);
-  const len = binaryString.length;
-  const bytes = new Uint8Array(len);
-  for (let i = 0; i < len; i++) {
-    bytes[i] = binaryString.charCodeAt(i);
-  }
-  return bytes;
-}
-
-/**
- * 從 Google Drive 下載 PDF
+ * 分段下載雲端大型 PDF (支援 > 25MB)
  */
 async function loadDrivePDF(fileId) {
   const loadingTip = document.getElementById('loading-tip');
   if (loadingTip) {
     loadingTip.style.display = 'block';
-    loadingTip.textContent = '☁️ 正在從 Google Drive 下載 PDF...';
+    loadingTip.textContent = '☁️ 讀取雲端檔案資訊...';
   }
 
   try {
-    const res = await fetch(`${GAS_WEB_APP_URL}?id=${fileId}`);
-    const result = await res.json();
+    // 1. 取得檔案大小資訊
+    const metaRes = await fetch(`${GAS_WEB_APP_URL}?id=${fileId}&action=meta`);
+    const meta = await metaRes.json();
+    if (meta.status === "error") throw new Error(meta.message);
 
-    if (result.status === "success" && result.data) {
-      const pdfBytes = base64ToUint8Array(result.data);
-      await loadPDF(pdfBytes);
-    } else {
-      throw new Error(result.message || "無法取得檔案內容");
+    const totalSize = meta.size;
+    const chunkSize = 3 * 1024 * 1024; // 每次下載 3MB
+    const finalBuffer = new Uint8Array(totalSize);
+    let loadedBytes = 0;
+
+    // 2. 分段下載並呈現進度
+    while (loadedBytes < totalSize) {
+      const percent = Math.round((loadedBytes / totalSize) * 100);
+      if (loadingTip) loadingTip.textContent = `☁️ 下載雲端 PDF (${percent}%)...`;
+
+      const chunkRes = await fetch(`${GAS_WEB_APP_URL}?id=${fileId}&start=${loadedBytes}&length=${chunkSize}`);
+      const chunkJson = await chunkRes.json();
+      if (chunkJson.status === "error") throw new Error(chunkJson.message);
+
+      const binaryStr = window.atob(chunkJson.data);
+      for (let i = 0; i < binaryStr.length; i++) {
+        finalBuffer[loadedBytes + i] = binaryStr.charCodeAt(i);
+      }
+      loadedBytes += chunkJson.fetched;
     }
+
+    // 下載完畢，觸發繪製
+    await loadPDF(finalBuffer);
+
   } catch (err) {
     console.error("下載雲端 PDF 失敗:", err);
-    alert("雲端 PDF 下載失敗，請確認該檔案大小與權限。");
+    alert("雲端 PDF 下載失敗: " + err.message);
     if (loadingTip) loadingTip.style.display = 'none';
   }
 }
 
 /**
- * 自動計算螢幕空間，完美防裁切渲染 PDF
+ * 高速漸進式 (Progressive) PDF 3D 渲染
  */
 async function loadPDF(pdfSource) {
   const flipbookContainer = document.getElementById('flipbook');
@@ -56,10 +61,10 @@ async function loadPDF(pdfSource) {
   
   if (loadingTip) {
     loadingTip.style.display = 'block';
-    loadingTip.textContent = '⚡ 電子書準備中...';
+    loadingTip.textContent = '⚡ 正在解析 PDF...';
   }
 
-  // 1. 銷毀舊實例與釋放記憶體
+  // 1. 銷毀舊實例與釋放舊記憶體
   if (currentPageFlip) {
     try { currentPageFlip.destroy(); } catch (e) {}
     currentPageFlip = null;
@@ -74,21 +79,19 @@ async function loadPDF(pdfSource) {
     const loadingTask = pdfjsLib.getDocument(pdfSource);
     const pdf = await loadingTask.promise;
 
-    // 2. 取得 PDF 原始寬高比
+    // 2. 計算尺寸
     const firstPage = await pdf.getPage(1);
     const unscaledViewport = firstPage.getViewport({ scale: 1.0 });
-    const pdfAspectRatio = unscaledViewport.width / unscaledViewport.height; // 單頁寬高比
+    const pdfAspectRatio = unscaledViewport.width / unscaledViewport.height;
 
-    // 3. 精確計算「當前螢幕可用扣除空間」
-    const navBarHeight = 55; // 頂部列高度 + 邊距
-    const availHeight = Math.max(300, window.innerHeight - navBarHeight - 20); // 可用高度
-    const availWidth = Math.max(300, window.innerWidth - 40);                   // 可用總寬度
+    const navBarHeight = 55;
+    const availHeight = Math.max(300, window.innerHeight - navBarHeight - 20);
+    const availWidth = Math.max(300, window.innerWidth - 40);
 
     const isMobile = window.innerWidth <= 768;
     let pageW, pageH;
 
     if (isMobile) {
-      // 手機直立 (單頁模式)：受限於可用高度或寬度
       if (availWidth / availHeight > pdfAspectRatio) {
         pageH = availHeight;
         pageW = Math.floor(pageH * pdfAspectRatio);
@@ -97,46 +100,49 @@ async function loadPDF(pdfSource) {
         pageH = Math.floor(pageW / pdfAspectRatio);
       }
     } else {
-      // 電腦/平板 (雙頁展開模式)：雙頁總寬度比例 = 2 * pdfAspectRatio
       const spreadRatio = 2 * pdfAspectRatio;
       if (availWidth / availHeight > spreadRatio) {
-        // 螢幕夠寬，限制高度為 main 邊界，算出精準頁寬
         pageH = availHeight;
         pageW = Math.floor(pageH * pdfAspectRatio);
       } else {
-        // 螢幕較窄，限制寬度
         pageW = Math.floor((availWidth / 2));
         pageH = Math.floor(pageW / pdfAspectRatio);
       }
     }
 
-    // 4. 以「固定精確像素 (size: "fixed")」初始化 PageFlip，保證 100% 滿版不超出螢幕
+    // 3. 建立佔位頁面 DOM 節點
+    const pageElements = [];
+    for (let i = 1; i <= pdf.numPages; i++) {
+      const pageDiv = document.createElement('div');
+      pageDiv.className = 'my-page';
+      pageDiv.id = `page-node-${i}`;
+      pageDiv.innerHTML = `<div class="page-loading">📄 第 ${i} 頁載入中...</div>`;
+      pageElements.push(pageDiv);
+    }
+
+    // 4. 初始化 PageFlip 3D 框架 (立刻呈現書本！)
     const pageFlip = new St.PageFlip(flipbookContainer, {
       width: pageW,
       height: pageH,
-      size: "fixed",                   // 💡 關鍵：固定精確計算的尺寸，絕不溢出裁切
+      size: "fixed",
       minWidth: 200,
       maxWidth: 1200,
       minHeight: 300,
       maxHeight: 1400,
       maxShadowOpacity: 0.4,
       showCover: true,
-      usePortrait: true,               // 手機直立自動轉單頁
+      usePortrait: true,
       mobileScrollSupport: false,
       clickToFlip: true
     });
 
     currentPageFlip = pageFlip;
-    const pageElements = [];
+    pageFlip.loadFromHTML(pageElements);
 
-    // 5. 渲染頁面 (使用 Retina 2.0 倍高清畫質)
+    // 5. 漸進式渲染 (Prioritized Rendering)
     const renderScale = (window.devicePixelRatio && window.devicePixelRatio > 1) ? 2.0 : 1.5;
 
     for (let pageNum = 1; pageNum <= pdf.numPages; pageNum++) {
-      if (loadingTip) {
-        loadingTip.textContent = `📄 轉換頁面 (${pageNum}/${pdf.numPages})...`;
-      }
-
       const page = await pdf.getPage(pageNum);
       const viewport = page.getViewport({ scale: renderScale });
 
@@ -152,28 +158,31 @@ async function loadPDF(pdfSource) {
           const url = URL.createObjectURL(blob);
           currentBlobUrls.push(url);
           resolve(url);
-        }, 'image/jpeg', 0.88);
+        }, 'image/jpeg', 0.85);
       });
 
-      const img = document.createElement('img');
-      img.src = imgUrl;
-      img.alt = `第 ${pageNum} 頁`;
-      
-      const pageDiv = document.createElement('div');
-      pageDiv.className = 'my-page';
-      pageDiv.appendChild(img);
-      
-      pageElements.push(pageDiv);
+      // 動態將渲染好的圖片放入對應的頁面節點
+      const targetDiv = document.getElementById(`page-node-${pageNum}`);
+      if (targetDiv) {
+        targetDiv.innerHTML = '';
+        const img = document.createElement('img');
+        img.src = imgUrl;
+        img.alt = `第 ${pageNum} 頁`;
+        targetDiv.appendChild(img);
+      }
 
-      await new Promise(resolve => setTimeout(resolve, 0));
+      // 💡 關鍵秒開邏輯：第 1~2 頁繪製完成後，立刻關閉全域載入提示，使用者即可開始閱讀！
+      if (pageNum === 2 || pageNum === pdf.numPages) {
+        if (loadingTip) loadingTip.style.display = 'none';
+      }
+
+      // 釋放 UI 執行緒，確保背景繪製時翻頁不卡頓
+      await new Promise(resolve => setTimeout(resolve, 10));
     }
-
-    pageFlip.loadFromHTML(pageElements);
 
   } catch (err) {
     console.error("PDF 渲染失敗:", err);
     alert("PDF 載入失敗，請確認檔案格式是否正確。");
-  } finally {
     if (loadingTip) loadingTip.style.display = 'none';
   }
 }
@@ -207,15 +216,11 @@ async function fetchDrivePDFList() {
   }
 }
 
-// 頁面初始化
+// 初始化
 document.addEventListener('DOMContentLoaded', () => {
-  // 預設秒開 main.pdf
   loadPDF('main.pdf');
-
-  // 背景抓取雲端書庫
   fetchDrivePDFList();
 
-  // 下拉選單監聽
   const gdriveSelect = document.getElementById('gdrive-select');
   if (gdriveSelect) {
     gdriveSelect.addEventListener('change', (e) => {
@@ -225,7 +230,6 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // 本地檔案上傳監聽
   const pdfInput = document.getElementById('pdf-upload');
   if (pdfInput) {
     pdfInput.addEventListener('change', (e) => {
@@ -243,7 +247,6 @@ document.addEventListener('DOMContentLoaded', () => {
     });
   }
 
-  // 背景音樂控制
   const bgAudio = document.getElementById('bg-audio');
   const btnToggle = document.getElementById('btn-toggle-music');
   const musicSelect = document.getElementById('music-select');
@@ -253,9 +256,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (bgAudio.paused) {
         bgAudio.play().then(() => {
           btnToggle.textContent = '⏸ 暫停音樂';
-        }).catch(err => {
-          alert("音樂播放失敗，請確認 audio/ 資料夾中是否存在該 MP3 檔案。");
-        });
+        }).catch(err => alert("音樂播放失敗"));
       } else {
         bgAudio.pause();
         btnToggle.textContent = '▶ 播放音樂';
