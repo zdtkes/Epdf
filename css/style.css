@@ -1,13 +1,236 @@
-/* 頁面未完成時的載入預覽區 */
-.page-loading {
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body, html {
+  width: 100vw;
+  height: 100vh;
+  background-color: #121212;
+  color: #f0f0f0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  overflow: hidden;
+}
+
+/* 雙視圖切換機制 */
+.view-screen {
+  display: none;
+  width: 100vw;
+  height: 100vh;
+}
+
+.view-screen.active {
+  display: flex;
+  flex-direction: column;
+}
+
+/* === 上傳視圖 Dropzone 樣式 === */
+#upload-view {
+  justify-content: center;
+  align-items: center;
+  background: radial-gradient(circle at center, #2a2a2a 0%, #121212 100%);
+}
+
+.dropzone {
+  width: 90%;
+  max-width: 550px;
+  padding: 50px 30px;
+  border: 2px dashed #4facfe;
+  border-radius: 16px;
+  background: rgba(255, 255, 255, 0.03);
+  text-align: center;
+  transition: all 0.3s ease;
+  backdrop-filter: blur(10px);
+}
+
+.dropzone.dragover {
+  background: rgba(79, 172, 254, 0.15);
+  border-color: #00f2fe;
+  transform: scale(1.02);
+}
+
+.dropzone-icon {
+  font-size: 64px;
+  margin-bottom: 16px;
+}
+
+.dropzone h2 {
+  font-size: 22px;
+  margin-bottom: 8px;
+  color: #ffffff;
+}
+
+.dropzone p {
+  font-size: 14px;
+  color: #aaa;
+  margin-bottom: 24px;
+}
+
+.btn-primary {
+  display: inline-block;
+  background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+  color: #000;
+  font-weight: 600;
+  padding: 12px 28px;
+  border-radius: 30px;
+  cursor: pointer;
+  box-shadow: 0 4px 15px rgba(79, 172, 254, 0.4);
+  transition: transform 0.2s, box-shadow 0.2s;
+}
+
+.btn-primary:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 6px 20px rgba(79, 172, 254, 0.6);
+}
+
+/* === 閱讀視圖 Layout === */
+.reader-header {
+  height: 50px;
+  background: #1e1e1e;
+  border-bottom: 1px solid #2d2d2d;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 20px;
+  z-index: 10;
+}
+
+.book-title {
+  font-size: 15px;
+  font-weight: 500;
+  color: #ddd;
+  max-width: 40vw;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.icon-btn {
+  background: #2b2b2b;
+  color: #ccc;
+  border: 1px solid #3d3d3d;
+  padding: 6px 14px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  transition: all 0.2s;
+}
+
+.icon-btn:hover {
+  background: #3a3a3a;
+  color: #fff;
+}
+
+.flipbook-viewport {
+  flex: 1;
+  width: 100%;
+  position: relative;
   display: flex;
   justify-content: center;
   align-items: center;
+  padding: 10px;
+  overflow: hidden;
+}
+
+/* PageFlip 紙張樣式 */
+.my-page {
+  background-color: #ffffff;
   width: 100%;
   height: 100%;
-  color: #888;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  overflow: hidden;
+  box-shadow: inset 0 0 10px rgba(0,0,0,0.1);
+}
+
+.my-page img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain; /* 100% 完整防裁切 */
+}
+
+/* 底部工具列 */
+.reader-footer {
+  height: 56px;
+  background: #1e1e1e;
+  border-top: 1px solid #2d2d2d;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 20px;
+  padding: 0 20px;
+  z-index: 10;
+}
+
+.nav-btn {
+  background: #2b2b2b;
+  color: #fff;
+  border: 1px solid #3d3d3d;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+  cursor: pointer;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  transition: background 0.2s;
+}
+
+.nav-btn:hover {
+  background: #4facfe;
+  color: #000;
+}
+
+.progress-container {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  width: 300px;
+  max-width: 50vw;
+}
+
+#page-num {
+  font-size: 13px;
+  color: #aaa;
+  min-width: 55px;
+  text-align: center;
+}
+
+#page-slider {
+  flex: 1;
+  accent-color: #4facfe;
+  cursor: pointer;
+}
+
+/* 載入中動畫 Overlay */
+#loading-overlay {
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(18, 18, 18, 0.9);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  z-index: 30;
+}
+
+.spinner {
+  width: 40px;
+  height: 40px;
+  border: 4px solid rgba(255, 255, 255, 0.1);
+  border-left-color: #4facfe;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin-bottom: 16px;
+}
+
+@keyframes spin {
+  to { transform: rotate(360deg); }
+}
+
+#loading-text {
   font-size: 14px;
-  background-color: #fdfdfd;
-  border: 1px dashed #ddd;
-  box-sizing: border-box;
+  color: #aaa;
 }
