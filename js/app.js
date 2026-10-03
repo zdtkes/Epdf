@@ -237,11 +237,14 @@ async function renderFlipbook(pdfData, taskId) {
   viewportContainer.appendChild(flipbookContainer);
 
   try {
-    const loadingTask = pdfjsLib.getDocument({ data: pdfData });
-    const timeoutPromise = new Promise((_, reject) => 
-      setTimeout(() => reject(new Error("PDF 解析超時")), 12000)
-    );
-
+  // 💡 使用 .slice(0) 建立獨立副本，防止 ArrayBuffer 被 Web Worker 抽離
+  const pdfDataCopy = pdfData.slice(0);
+  const loadingTask = pdfjsLib.getDocument({ data: pdfDataCopy });
+  
+  const timeoutPromise = new Promise((_, reject) => 
+    setTimeout(() => reject(new Error("PDF 解析超時")), 12000)
+  );
+    
     const pdf = await Promise.race([loadingTask.promise, timeoutPromise]);
     if (taskId !== currentLoadingTaskId) return;
 
