@@ -1,40 +1,44 @@
-body {
+* {
+  box-sizing: border-box;
   margin: 0;
   padding: 0;
-  background-color: #f4f4f9;
+}
+
+body {
+  background-color: #333;
+  color: #fff;
   font-family: sans-serif;
   display: flex;
   flex-direction: column;
-  align-items: center;
+  height: 100vh;
+  overflow: hidden;
 }
 
 .toolbar {
-  margin: 15px 0;
+  background: rgba(0, 0, 0, 0.8);
+  padding: 10px 20px;
   display: flex;
-  gap: 10px;
+  justify-content: flex-end;
   align-items: center;
+  z-index: 10;
 }
 
-button, input {
-  padding: 8px 16px;
-  cursor: pointer;
+.music-controls select, .music-controls button {
+  padding: 6px 12px;
+  margin-left: 8px;
   border-radius: 4px;
-  border: 1px solid #ccc;
-  background: #fff;
+  border: none;
+  cursor: pointer;
 }
 
-button:hover {
-  background-color: #e0e0e0;
-}
-
-.container {
+.book-container {
+  flex: 1;
   display: flex;
   justify-content: center;
   align-items: center;
-  width: 90vw;
-  height: 80vh;
+  padding: 20px;
 }
 
 #flipbook {
-  box-shadow: 0 0 20px rgba(0,0,0,0.2);
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
 }
