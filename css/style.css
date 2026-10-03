@@ -17,13 +17,13 @@ body, html {
 
 /* 頂部列 */
 .reader-header {
-  height: 50px;
+  height: 48px;
   background: #1e1e1e;
   border-bottom: 1px solid #2d2d2d;
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 0 16px;
+  padding: 0 12px;
   z-index: 10;
   flex-shrink: 0;
 }
@@ -32,11 +32,12 @@ body, html {
   font-weight: 600;
   font-size: 15px;
   color: #4facfe;
+  white-space: nowrap;
 }
 
 .header-controls {
   display: flex;
-  gap: 8px;
+  gap: 6px;
   align-items: center;
 }
 
@@ -44,23 +45,25 @@ select {
   background: #2b2b2b;
   color: #fff;
   border: 1px solid #3d3d3d;
-  padding: 6px 12px;
+  padding: 5px 8px;
   border-radius: 6px;
-  font-size: 13px;
+  font-size: 12px;
   outline: none;
   cursor: pointer;
   max-width: 220px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
 
 .icon-btn {
   background: #2b2b2b;
   color: #ccc;
   border: 1px solid #3d3d3d;
-  padding: 6px 12px;
+  padding: 5px 10px;
   border-radius: 6px;
   cursor: pointer;
-  font-size: 13px;
-  transition: background 0.2s;
+  font-size: 12px;
+  white-space: nowrap;
 }
 
 .icon-btn:hover {
@@ -71,7 +74,7 @@ select {
 /* 上傳區塊 */
 .dropzone-box {
   background: rgba(18, 18, 18, 0.95);
-  padding: 15px 10px;
+  padding: 12px 10px;
   display: flex;
   justify-content: center;
   align-items: center;
@@ -82,43 +85,44 @@ select {
 
 .dropzone {
   width: 100%;
-  max-width: 550px;
-  padding: 16px;
+  max-width: 500px;
+  padding: 14px;
   border: 2px dashed #4facfe;
-  border-radius: 12px;
+  border-radius: 10px;
   background: rgba(255, 255, 255, 0.02);
   text-align: center;
 }
 
-.dropzone-icon { font-size: 32px; margin-bottom: 4px; }
-.dropzone h2 { font-size: 16px; color: #fff; margin-bottom: 4px; }
-.dropzone p { font-size: 12px; color: #aaa; margin-bottom: 10px; }
+.dropzone-icon { font-size: 28px; margin-bottom: 2px; }
+.dropzone h2 { font-size: 15px; color: #fff; margin-bottom: 2px; }
+.dropzone p { font-size: 11px; color: #aaa; margin-bottom: 8px; }
 
 .url-input-container {
   display: flex;
-  gap: 8px;
+  gap: 6px;
   width: 100%;
-  margin: 8px 0;
+  margin: 6px 0;
 }
 
 #gdrive-url-input {
   flex: 1;
-  padding: 8px 12px;
+  padding: 6px 10px;
   border-radius: 6px;
   border: 1px solid #3d3d3d;
   background: #000;
   color: #fff;
-  font-size: 13px;
+  font-size: 12px;
+  min-width: 0;
 }
 
 .btn-secondary {
   background: #2b2b2b;
   color: #fff;
   border: 1px solid #3d3d3d;
-  padding: 8px 14px;
+  padding: 6px 12px;
   border-radius: 6px;
   cursor: pointer;
-  font-size: 13px;
+  font-size: 12px;
   white-space: nowrap;
 }
 
@@ -127,32 +131,39 @@ select {
   background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
   color: #000;
   font-weight: 600;
-  padding: 8px 20px;
-  border-radius: 20px;
+  padding: 6px 16px;
+  border-radius: 16px;
   cursor: pointer;
-  font-size: 13px;
+  font-size: 12px;
 }
 
 .divider {
-  margin: 8px 0;
+  margin: 6px 0;
   display: flex;
   align-items: center;
   color: #555;
-  font-size: 12px;
+  font-size: 11px;
 }
 .divider::before, .divider::after { content: ""; flex: 1; border-bottom: 1px solid #333; }
-.divider span { padding: 0 8px; }
+.divider span { padding: 0 6px; }
 
-/* 閱讀主區域 */
+/* 電腦版滿版閱讀主區域 */
 .flipbook-viewport {
   flex: 1;
   width: 100%;
+  height: 100%;
   position: relative;
   display: flex;
   justify-content: center;
   align-items: center;
-  padding: 10px;
+  padding: 4px;
   overflow: hidden;
+}
+
+#flipbook {
+  display: flex;
+  justify-content: center;
+  align-items: center;
 }
 
 .my-page {
@@ -163,7 +174,7 @@ select {
   justify-content: center;
   align-items: center;
   overflow: hidden;
-  box-shadow: inset 0 0 8px rgba(0,0,0,0.1);
+  box-shadow: inset 0 0 10px rgba(0,0,0,0.12);
 }
 
 .my-page img {
@@ -174,14 +185,14 @@ select {
 
 /* 底部工具列 */
 .reader-footer {
-  height: 52px;
+  height: 48px;
   background: #1e1e1e;
   border-top: 1px solid #2d2d2d;
   display: flex;
   justify-content: center;
   align-items: center;
-  gap: 15px;
-  padding: 0 20px;
+  gap: 12px;
+  padding: 0 12px;
   flex-shrink: 0;
 }
 
@@ -193,31 +204,38 @@ select {
   height: 32px;
   border-radius: 50%;
   cursor: pointer;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  flex-shrink: 0;
 }
 
 .progress-container {
   display: flex;
   align-items: center;
-  gap: 10px;
-  width: 260px;
+  gap: 8px;
+  width: 320px;
+  max-width: 60vw;
 }
 
 #page-num {
-  font-size: 13px;
+  font-size: 12px;
   color: #aaa;
-  min-width: 50px;
+  min-width: 48px;
   text-align: center;
+  white-space: nowrap;
 }
 
 #page-slider {
   flex: 1;
   accent-color: #4facfe;
+  cursor: pointer;
 }
 
 #loading-overlay {
   position: absolute;
   top: 0; left: 0; right: 0; bottom: 0;
-  background: rgba(18, 18, 18, 0.85);
+  background: rgba(18, 18, 18, 0.88);
   display: flex;
   flex-direction: column;
   justify-content: center;
@@ -231,8 +249,17 @@ select {
   border: 3px solid rgba(255, 255, 255, 0.1);
   border-left-color: #4facfe;
   border-radius: 50%;
-  animation: spin 1s linear infinite;
-  margin-bottom: 12px;
+  animation: spin 0.8s linear infinite;
+  margin-bottom: 10px;
 }
 
 @keyframes spin { to { transform: rotate(360deg); } }
+
+/* 📱 手機端特定 RWD 排版修正 */
+@media (max-width: 768px) {
+  .brand { font-size: 13px; }
+  select { max-width: 120px; font-size: 11px; }
+  .btn-text { display: none; } /* 手機隱藏按鈕文字僅保留圖示 */
+  .progress-container { width: 100%; max-width: none; }
+  .reader-footer { gap: 8px; padding: 0 8px; }
+}
