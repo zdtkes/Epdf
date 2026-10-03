@@ -1,98 +1,35 @@
-* {
-  box-sizing: border-box;
-  margin: 0;
-  padding: 0;
-}
-
-body {
-  background-color: #1e1e1e;
-  color: #fff;
-  font-family: sans-serif;
-  display: flex;
-  flex-direction: column;
-  height: 100vh;
-  overflow: hidden;
-}
-
-.toolbar {
-  background: rgba(0, 0, 0, 0.9);
-  padding: 10px 20px;
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  z-index: 10;
-  flex-wrap: wrap;
-  gap: 10px;
-}
-
-.left-controls, .music-controls {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-#pdf-upload { display: none; }
-
-.upload-btn {
-  background-color: #4CAF50;
-  color: white;
-  padding: 6px 12px;
-  border-radius: 4px;
-  cursor: pointer;
-  font-size: 14px;
-}
-
-select, button {
-  padding: 6px 10px;
-  border-radius: 4px;
-  border: none;
-  cursor: pointer;
-  background-color: #333;
-  color: #fff;
-}
-
-/* 電子書區域與防裁切設定 */
-.book-container {
-  flex: 1;
+/* 電子書外層容器：限制最大高度與彈性邊界 */
+.flipbook-container {
+  width: 100%;
+  max-width: 1200px;
+  height: 80vh; /* 響應式高度 */
+  max-height: 850px;
+  margin: 0 auto;
   display: flex;
   justify-content: center;
   align-items: center;
-  padding: 15px;
-  height: calc(100vh - 65px);
-  overflow: hidden;
-  box-sizing: border-box;
+  touch-action: manipulation; /* 優化手機觸控 */
 }
 
-#flipbook {
-  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
-}
-
+/* 翻頁單頁容器 */
 .my-page {
-  background-color: #fff;
+  background-color: #ffffff;
   width: 100%;
   height: 100%;
-  overflow: hidden;
   display: flex;
   justify-content: center;
   align-items: center;
+  box-sizing: border-box;
+  overflow: hidden;
+  box-shadow: inset 0 0 5px rgba(0,0,0,0.05);
 }
 
-/* 防裁切核心設定 */
+/* 💡 防裁切核心：使用 object-fit: contain 確保圖片完整顯示，絕不被切掉 */
 .my-page img {
   width: 100%;
   height: 100%;
-  object-fit: contain; /* 確保整頁 PDF 縮放到容器內，不被裁剪 */
-}
-
-#loading-tip {
-  position: absolute;
-  top: 50%;
-  left: 50%;
-  transform: translate(-50%, -50%);
-  background: rgba(0, 0, 0, 0.85);
-  color: #fff;
-  padding: 15px 25px;
-  border-radius: 8px;
-  z-index: 100;
-  font-size: 15px;
+  object-fit: contain;
+  display: block;
+  user-select: none;
+  -webkit-user-drag: none;
 }
