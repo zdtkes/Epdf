@@ -6,7 +6,30 @@ let currentPageFlip = null;
 let currentPdfDoc = null;
 let currentBlobUrls = [];
 let totalPagesCount = 0;
-let currentLoadingTaskId = 0; // 用於追蹤最新載入任務，避免快速切換檔案時衝突
+let currentLoadingTaskId = 0;
+
+// 全域縮放狀態
+let currentZoomScale = 1.0;
+const MIN_ZOOM = 0.7;
+const MAX_ZOOM = 2.5;
+const ZOOM_STEP = 0.15;
+
+function applyZoom(scale) {
+  currentZoomScale = Math.min(Math.max(scale, MIN_ZOOM), MAX_ZOOM);
+  const flipbook = document.getElementById('flipbook');
+  const zoomText = document.getElementById('zoom-level-text');
+  
+  if (flipbook) {
+    flipbook.style.transform = `scale(${currentZoomScale})`;
+  }
+  if (zoomText) {
+    zoomText.textContent = `${Math.round(currentZoomScale * 100)}%`;
+  }
+}
+
+function resetZoom() {
+  applyZoom(1.0);
+}
 
 function showLoading(msg) {
   const loadingOverlay = document.getElementById('loading-overlay');
@@ -20,14 +43,10 @@ function hideLoading() {
   if (loadingOverlay) loadingOverlay.style.display = 'none';
 }
 
-/**
- * ⚡ 雙管道載入 PDF (直連優先，失敗走控頻分段下載)
- */
 async function loadDrivePDF(fileId) {
   const taskId = ++currentLoadingTaskId;
   showLoading('⚡ 正在從雲端載入 PDF...');
 
-  // 1. 嘗試直連 CDN
   const cdnUrl = `https://lh3.googleusercontent.com/d/${fileId}`;
   try {
     const controller = new AbortController();
@@ -39,7 +58,7 @@ async function loadDrivePDF(fileId) {
     if (res.ok) {
       const buf = await res.arrayBuffer();
       const bytes = new Uint8Array(buf);
-      if (bytes[0] === 0x25 && bytes[1] === 0x50) { // 確保為 %PDF
+      if (bytes[0] === 0x25 && bytes[1] === 0x50) {
         if (taskId === currentLoadingTaskId) {
           await renderFlipbook(bytes, taskId);
         }
@@ -50,15 +69,11 @@ async function loadDrivePDF(fileId) {
     console.warn("CDN 直連不可用，切換至 GAS 安全管道...");
   }
 
-  // 2. 備用：GAS 控頻安全下載
   if (taskId === currentLoadingTaskId) {
     await loadDrivePDFSafeGAS(fileId, taskId);
   }
 }
 
-/**
- * 🛡️ GAS 控頻下載引擎 (限制 Max 2 併發，避免 429 被 Google 阻擋)
- */
 async function loadDrivePDFSafeGAS(fileId, taskId) {
   try {
     const metaRes = await fetch(`${GAS_WEB_APP_URL}?id=${fileId}&action=meta`);
@@ -66,11 +81,10 @@ async function loadDrivePDFSafeGAS(fileId, taskId) {
     if (meta.status === "error") throw new Error(meta.message);
 
     const totalSize = meta.size;
-    const chunkSize = 2 * 1024 * 1024; // 每區塊 2MB
+    const chunkSize = 2 * 1024 * 1024;
     const totalChunks = Math.ceil(totalSize / chunkSize);
     const finalBuffer = new Uint8Array(totalSize);
 
-    // 單一區塊下載 (含 3 次失敗自動重試)
     async function fetchChunkWithRetry(start, length, retries = 3) {
       for (let attempt = 0; attempt < retries; attempt++) {
         try {
@@ -85,14 +99,13 @@ async function loadDrivePDFSafeGAS(fileId, taskId) {
       throw new Error(`雲端資料區塊 (${start}) 傳輸失敗`);
     }
 
-    // 控頻隊列 (最多同時 2 個連線)
     let completedChunks = 0;
     const poolLimit = 2;
     const tasks = [];
 
     for (let i = 0; i < totalChunks; i++) {
       tasks.push(async () => {
-        if (taskId !== currentLoadingTaskId) return; // 任務已過期
+        if (taskId !== currentLoadingTaskId) return;
         const start = i * chunkSize;
         const chunkJson = await fetchChunkWithRetry(start, chunkSize);
         
@@ -107,7 +120,6 @@ async function loadDrivePDFSafeGAS(fileId, taskId) {
       });
     }
 
-    // 執行控頻池
     const executing = [];
     for (const task of tasks) {
       if (taskId !== currentLoadingTaskId) return;
@@ -132,17 +144,13 @@ async function loadDrivePDFSafeGAS(fileId, taskId) {
   }
 }
 
-/**
- * 📖 3D 電子書渲染引擎 (含完整重置與防卡死保護)
- */
 async function renderFlipbook(pdfData, taskId) {
   showLoading('⚡ 正在排版 3D 電子書...');
+  resetZoom(); // 重置縮放
 
-  // 隱藏上傳區
   const dropzoneSection = document.getElementById('dropzone-section');
   if (dropzoneSection) dropzoneSection.style.display = 'none';
 
-  // 1. 徹底銷毀舊 PDF.js 實體與 3D 物件
   if (currentPdfDoc) {
     try { currentPdfDoc.destroy(); } catch (e) {}
     currentPdfDoc = null;
@@ -152,11 +160,9 @@ async function renderFlipbook(pdfData, taskId) {
     currentPageFlip = null;
   }
   
-  // 釋放舊圖片記憶體
   currentBlobUrls.forEach(url => URL.revokeObjectURL(url));
   currentBlobUrls = [];
 
-  // 2. 重置並建立全新的 DOM 容器
   const viewportContainer = document.querySelector('.flipbook-viewport');
   if (!viewportContainer) return;
 
@@ -168,7 +174,6 @@ async function renderFlipbook(pdfData, taskId) {
   viewportContainer.appendChild(flipbookContainer);
 
   try {
-    // 3. 解析 PDF 文件 (加入 12 秒超時防護)
     const loadingTask = pdfjsLib.getDocument({ data: pdfData });
     
     const timeoutPromise = new Promise((_, reject) => 
@@ -183,13 +188,13 @@ async function renderFlipbook(pdfData, taskId) {
 
     updateSliderUI(1, totalPagesCount);
 
-    // 4. 計算滿版排版尺寸
     const firstPage = await pdf.getPage(1);
     const unscaledViewport = firstPage.getViewport({ scale: 1.0 });
     const pdfAspectRatio = unscaledViewport.width / unscaledViewport.height;
 
-    const availHeight = Math.max(320, window.innerHeight - 106);
-    const availWidth = Math.max(300, window.innerWidth - 16);
+    // 滿版加大計算（縮小扣除高度）
+    const availHeight = Math.max(320, window.innerHeight - 105);
+    const availWidth = Math.max(300, window.innerWidth - 20);
     const isMobile = window.innerWidth <= 768;
 
     let pageW, pageH;
@@ -212,7 +217,6 @@ async function renderFlipbook(pdfData, taskId) {
       }
     }
 
-    // 5. 建立頁面節點
     const pageElements = [];
     for (let i = 1; i <= totalPagesCount; i++) {
       const pageDiv = document.createElement('div');
@@ -222,7 +226,6 @@ async function renderFlipbook(pdfData, taskId) {
       pageElements.push(pageDiv);
     }
 
-    // 6. 初始化 3D 翻頁組件
     const pageFlip = new St.PageFlip(flipbookContainer, {
       width: pageW,
       height: pageH,
@@ -241,7 +244,6 @@ async function renderFlipbook(pdfData, taskId) {
 
     const renderScale = Math.min(window.devicePixelRatio || 1, 1.5);
 
-    // 7. 非阻塞式頁面渲染 Helper (使用 toBlob)
     async function renderSinglePage(pageNum) {
       if (taskId !== currentLoadingTaskId) return;
       const page = await pdf.getPage(pageNum);
@@ -270,7 +272,6 @@ async function renderFlipbook(pdfData, taskId) {
       }
     }
 
-    // 8. 秒開：繪製第 1 頁與第 2 頁，完成立刻開書
     showLoading('⚡ 正在產生封面...');
     await renderSinglePage(1);
     if (totalPagesCount >= 2) {
@@ -281,10 +282,9 @@ async function renderFlipbook(pdfData, taskId) {
       hideLoading();
     }
 
-    // 9. 背景靜默繪製剩餘頁面
     (async () => {
       for (let p = 3; p <= totalPagesCount; p++) {
-        if (taskId !== currentLoadingTaskId) break; // 若已切換新檔案則終止
+        if (taskId !== currentLoadingTaskId) break;
         await renderSinglePage(p);
         await new Promise(r => setTimeout(r, 15));
       }
@@ -299,9 +299,6 @@ async function renderFlipbook(pdfData, taskId) {
   }
 }
 
-/**
- * 自動抓取雲端書庫清單
- */
 async function fetchDrivePDFList() {
   const gdriveSelect = document.getElementById('gdrive-select');
   if (!gdriveSelect) return;
@@ -327,7 +324,6 @@ async function fetchDrivePDFList() {
       gdriveSelect.appendChild(opt);
     });
 
-    // 預設開啟首份雙週報
     if (pdfList.length > 0) {
       const firstFileId = pdfList[0].id;
       gdriveSelect.value = firstFileId;
@@ -342,16 +338,6 @@ async function fetchDrivePDFList() {
 }
 
 function handleUrlInput(url) {
-  const folderMatch = url.match(/\/folders\/([a-zA-Z0-9_-]+)/);
-  if (folderMatch) {
-    showLoading("📁 讀取資料夾...");
-    fetchDrivePDFList().then(() => {
-      hideLoading();
-      alert("已更新雲端書單！");
-    });
-    return;
-  }
-
   let fileId = null;
   const regD = /\/d\/([a-zA-Z0-9_-]+)/;
   const regId = /[?&]id=([a-zA-Z0-9_-]+)/;
@@ -383,16 +369,37 @@ function updateSliderUI(current, total) {
   updatePageNumDisplay(current, total);
 }
 
-// 初始化事件綁定
+// 事件綁定
 document.addEventListener('DOMContentLoaded', () => {
   fetchDrivePDFList();
+
+  // 縮放按鈕綁定
+  const btnZoomIn = document.getElementById('btn-zoom-in');
+  const btnZoomOut = document.getElementById('btn-zoom-out');
+  const btnZoomReset = document.getElementById('btn-zoom-reset');
+
+  if (btnZoomIn) btnZoomIn.addEventListener('click', () => applyZoom(currentZoomScale + ZOOM_STEP));
+  if (btnZoomOut) btnZoomOut.addEventListener('click', () => applyZoom(currentZoomScale - ZOOM_STEP));
+  if (btnZoomReset) btnZoomReset.addEventListener('click', resetZoom);
+
+  // Ctrl + 滾輪縮放支援
+  const viewport = document.querySelector('.flipbook-viewport');
+  if (viewport) {
+    viewport.addEventListener('wheel', (e) => {
+      if (e.ctrlKey) {
+        e.preventDefault();
+        if (e.deltaY < 0) applyZoom(currentZoomScale + 0.1);
+        else applyZoom(currentZoomScale - 0.1);
+      }
+    }, { passive: false });
+  }
 
   const btnToggleUpload = document.getElementById('btn-toggle-upload');
   if (btnToggleUpload) {
     btnToggleUpload.addEventListener('click', () => {
       const dropzoneSection = document.getElementById('dropzone-section');
       if (dropzoneSection) {
-        dropzoneSection.style.display = (dropzoneSection.style.display === 'none') ? 'flex' : 'none';
+        dropzoneSection.style.display = (dropzoneSection.style.display === 'none') ? 'block' : 'none';
       }
     });
   }
@@ -428,18 +435,10 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   const btnPrev = document.getElementById('btn-prev');
-  if (btnPrev) {
-    btnPrev.addEventListener('click', () => {
-      if (currentPageFlip) currentPageFlip.flipPrev();
-    });
-  }
+  if (btnPrev) btnPrev.addEventListener('click', () => { if (currentPageFlip) currentPageFlip.flipPrev(); });
 
   const btnNext = document.getElementById('btn-next');
-  if (btnNext) {
-    btnNext.addEventListener('click', () => {
-      if (currentPageFlip) currentPageFlip.flipNext();
-    });
-  }
+  if (btnNext) btnNext.addEventListener('click', () => { if (currentPageFlip) currentPageFlip.flipNext(); });
 
   const pageSlider = document.getElementById('page-slider');
   if (pageSlider) {
