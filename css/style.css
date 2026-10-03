@@ -147,7 +147,7 @@ select {
 .divider::before, .divider::after { content: ""; flex: 1; border-bottom: 1px solid #333; }
 .divider span { padding: 0 6px; }
 
-/* 電腦版滿版閱讀主區域 */
+/* 閱讀主區域 (電腦滿版放大) */
 .flipbook-viewport {
   flex: 1;
   width: 100%;
@@ -255,11 +255,11 @@ select {
 
 @keyframes spin { to { transform: rotate(360deg); } }
 
-/* 📱 手機端特定 RWD 排版修正 */
+/* 📱 手機端 RWD 防跑版 */
 @media (max-width: 768px) {
   .brand { font-size: 13px; }
   select { max-width: 120px; font-size: 11px; }
-  .btn-text { display: none; } /* 手機隱藏按鈕文字僅保留圖示 */
+  .btn-text { display: none; }
   .progress-container { width: 100%; max-width: none; }
   .reader-footer { gap: 8px; padding: 0 8px; }
 }
