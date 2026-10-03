@@ -2,77 +2,58 @@
 <html lang="zh-TW">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
-  <title>土庫國小 3D 電子書閱讀器</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>3D 電子雙週報</title>
   <link rel="stylesheet" href="css/style.css">
   <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.min.js"></script>
-  <script src="https://cdn.jsdelivr.net/npm/page-flip/dist/js/page-flip.browser.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/page-flip@2.0.7/dist/js/page-flip.browser.js"></script>
 </head>
 <body>
 
-  <!-- 頂部列 -->
-  <header class="reader-header">
-    <div class="brand">📖 雙週報</div>
-    <div class="header-controls">
-      <select id="gdrive-select">
-        <option value="">☁️ 載入書庫...</option>
-      </select>
-      <button id="btn-toggle-upload" class="icon-btn" title="開啟/收合上傳區">📁 <span class="btn-text">上傳</span></button>
-      <button id="btn-fullscreen" class="icon-btn" title="全螢幕 (F)">⛶ <span class="btn-text">全螢幕</span></button>
+  <!-- 頂部工具列 -->
+  <header class="top-bar">
+    <div class="logo">💻 雙週報</div>
+    <div class="header-right">
+      <select id="gdrive-select"><option value="">讀取雲端選單中...</option></select>
+      <input type="text" id="gdrive-url-input" placeholder="貼上 Google Drive 網址..." />
+      <button id="btn-load-url" class="btn">載入</button>
+      <button id="btn-toggle-upload" class="btn">📁 上傳檔案</button>
+      <button id="btn-fullscreen" class="btn">⛶ 全螢幕</button>
     </div>
   </header>
 
-  <!-- 拖曳與連結上傳區塊 -->
-  <div id="dropzone-section" class="dropzone-box">
-    <div class="dropzone" id="dropzone">
-      <div class="dropzone-icon">📚</div>
-      <h2>將 PDF 檔案拖曳至此處</h2>
-      <p>或貼上 Google Drive 分享連結</p>
-
-      <div class="url-input-container">
-        <input type="text" id="gdrive-url-input" placeholder="貼上 Google Drive 連結..." />
-        <button id="btn-load-url" class="btn-secondary">讀取連結</button>
-      </div>
-
-      <div class="divider"><span>或</span></div>
-
-      <label class="btn-primary">
-        選擇本機 PDF 檔案
-        <input type="file" id="file-input" accept="application/pdf" hidden>
-      </label>
-    </div>
+  <!-- 檔案上傳區 -->
+  <div id="dropzone-section" style="display: none; padding: 10px; background: #222; text-align: center;">
+    <input type="file" id="file-input" accept="application/pdf" />
   </div>
 
-  <!-- 閱讀主區域 -->
+  <!-- 載入遮罩 -->
+  <div id="loading-overlay" style="display: none;">
+    <div class="spinner"></div>
+    <div id="loading-text">正在載入...</div>
+  </div>
+
+  <!-- 主要顯示畫布區 (滿版擴大) -->
   <main class="flipbook-viewport">
     <div id="flipbook"></div>
-    <div id="loading-overlay" style="display: none;">
-      <div class="spinner"></div>
-      <div id="loading-text">⚡ 正在開啟電子書...</div>
-    </div>
   </main>
-  
-  <!-- 在底部工具列新增縮放控制組 -->
-<div class="zoom-controls" style="display: flex; align-items: center; gap: 8px;">
-  <button id="btn-zoom-out" class="btn" title="縮小">-</button>
-  <span id="zoom-level-text" style="color: #fff; font-size: 14px; min-width: 45px; text-align: center;">100%</span>
-  <button id="btn-zoom-in" class="btn" title="放大">+</button>
-  <button id="btn-zoom-reset" class="btn" title="一鍵還原">↺ 還原</button>
-</div>
 
-  <!-- 底部控制列 -->
-  <footer class="reader-footer">
-    <button id="btn-prev" class="nav-btn" title="上一頁 (←)">◀</button>
+  <!-- 底部工具列 (包含縮放控制) -->
+  <footer class="controls-bar">
+    <button id="btn-prev" class="btn">◄ 上一頁</button>
+    <input type="range" id="page-slider" min="1" value="1" />
+    <span id="page-num">0 / 0</span>
+    <button id="btn-next" class="btn">下一頁 ►</button>
 
-    <div class="progress-container">
-      <span id="page-num">1 / 1</span>
-      <input type="range" id="page-slider" min="1" max="1" value="1">
+    <!-- 縮放控制組 -->
+    <div class="zoom-controls">
+      <button id="btn-zoom-out" class="btn" title="縮小">-</button>
+      <span id="zoom-level-text">100%</span>
+      <button id="btn-zoom-in" class="btn" title="放大">+</button>
+      <button id="btn-zoom-reset" class="btn" title="一鍵還原">↺ 還原</button>
     </div>
-
-    <button id="btn-next" class="nav-btn" title="下一頁 (→)">▶</button>
   </footer>
 
   <script src="js/app.js"></script>
 </body>
 </html>
-
