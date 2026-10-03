@@ -1,17 +1,29 @@
 pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
 // GAS Web App 部署網址
-const GAS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbyqYy4ZrQLvYxLuFN3cRFtxi1GpBmOVCQGVa8pQEUY3_WUxjKH1zQM9AQsOrMebrsvp/exec";
+const GAS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbx3SATCw9BdhW50U78iOypUJlUhgqiQkLPCrvYyeeDLbpyg1C1UbTpA3CPAtPQWBXTExA/exec";
 
 let currentPageFlip = null;
 let currentBlobUrls = [];
 let totalPagesCount = 0;
 
-const loadingOverlay = document.getElementById('loading-overlay');
-const loadingText = document.getElementById('loading-text');
+/**
+ * 安全顯示/隱藏載入提示
+ */
+function showLoading(msg) {
+  const loadingOverlay = document.getElementById('loading-overlay');
+  const loadingText = document.getElementById('loading-text');
+  if (loadingOverlay) loadingOverlay.style.display = 'flex';
+  if (loadingText) loadingText.textContent = msg;
+}
+
+function hideLoading() {
+  const loadingOverlay = document.getElementById('loading-overlay');
+  if (loadingOverlay) loadingOverlay.style.display = 'none';
+}
 
 /**
- * ⚡ 讀取雲端 PDF 檔案 (快速且 100% 成功)
+ * ⚡ 讀取雲端 PDF 檔案 (經由 GAS 全速打包)
  */
 async function loadDrivePDF(fileId) {
   showLoading('⚡ 正在從雲端載入 PDF 檔案...');
@@ -74,12 +86,13 @@ async function handleUrlInput(url) {
 async function renderFlipbook(pdfData) {
   showLoading('⚡ 正在排版 3D 電子書...');
 
-  // 自動隱藏拖曳上傳區塊，呈現滿版閱讀
+  // 自動隱藏拖曳上傳區塊
   const dropzoneSection = document.getElementById('dropzone-section');
   if (dropzoneSection) {
     dropzoneSection.style.display = 'none';
   }
 
+  // 銷毀舊選單與釋放記憶體
   if (currentPageFlip) {
     try { currentPageFlip.destroy(); } catch (e) {}
     currentPageFlip = null;
@@ -89,6 +102,11 @@ async function renderFlipbook(pdfData) {
   currentBlobUrls = [];
 
   const flipbookContainer = document.getElementById('flipbook');
+  if (!flipbookContainer) {
+    console.error("找不到 id='flipbook' 的容器");
+    hideLoading();
+    return;
+  }
   flipbookContainer.innerHTML = '';
 
   try {
@@ -102,7 +120,7 @@ async function renderFlipbook(pdfData) {
     const unscaledViewport = firstPage.getViewport({ scale: 1.0 });
     const pdfAspectRatio = unscaledViewport.width / unscaledViewport.height;
 
-    // 精確計算視窗剩餘高度
+    // 計算視窗剩餘高度
     const navHeight = 50;
     const footerHeight = 52;
     const availHeight = Math.max(300, window.innerHeight - navHeight - footerHeight - 20);
@@ -184,7 +202,6 @@ async function renderFlipbook(pdfData) {
         targetDiv.appendChild(img);
       }
 
-      // 第 2 頁渲染好後立即關閉載入提示，達成秒看體驗
       if (pageNum === 2 || pageNum === totalPagesCount) {
         hideLoading();
       }
@@ -227,7 +244,7 @@ async function fetchDrivePDFList() {
       gdriveSelect.appendChild(opt);
     });
 
-    // 💡 頁面打開後，自動載入第一個檔案
+    // 頁面打開後自動加載第一個檔案
     if (pdfList.length > 0) {
       const firstFileId = pdfList[0].id;
       gdriveSelect.value = firstFileId;
@@ -236,20 +253,9 @@ async function fetchDrivePDFList() {
 
   } catch (err) {
     console.error("讀取雲端清單失敗:", err);
-    gdriveSelect.innerHTML = '<option value="">雲端書單讀取失敗</option>';
+    if (gdriveSelect) gdriveSelect.innerHTML = '<option value="">雲端書單讀取失敗</option>';
     hideLoading();
   }
-}
-
-function showLoading(msg) {
-  if (loadingOverlay) {
-    loadingOverlay.style.display = 'flex';
-    if (loadingText) loadingText.textContent = msg;
-  }
-}
-
-function hideLoading() {
-  if (loadingOverlay) loadingOverlay.style.display = 'none';
 }
 
 function updatePageNumDisplay(current, total) {
@@ -269,7 +275,7 @@ function updateSliderUI(current, total) {
   updatePageNumDisplay(current, total);
 }
 
-// 初始化事件
+// 事件初始化綁定
 document.addEventListener('DOMContentLoaded', () => {
   fetchDrivePDFList();
 
