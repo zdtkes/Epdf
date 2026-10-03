@@ -9,7 +9,7 @@ let currentBlobUrls = [];
 let totalPagesCount = 0;
 let currentLoadingTaskId = 0;
 
-// ⚡ 1. 記憶體快取 (RAM - 當前頁面 0 秒秒開)
+// ⚡ 1. 記憶體快取 (RAM Cache - 當前頁面 0 秒秒開)
 const pdfMemoryCache = new Map();
 
 // 💾 2. IndexedDB 本地永久磁碟 (關閉瀏覽器後依然存在，離線 0.1 秒秒開)
@@ -237,14 +237,14 @@ async function renderFlipbook(pdfData, taskId) {
   viewportContainer.appendChild(flipbookContainer);
 
   try {
-  // 💡 使用 .slice(0) 建立獨立副本，防止 ArrayBuffer 被 Web Worker 抽離
-  const pdfDataCopy = pdfData.slice(0);
-  const loadingTask = pdfjsLib.getDocument({ data: pdfDataCopy });
-  
-  const timeoutPromise = new Promise((_, reject) => 
-    setTimeout(() => reject(new Error("PDF 解析超時")), 12000)
-  );
+    // 💡 使用 .slice(0) 建立獨立副本，防止 ArrayBuffer 被 Web Worker 抽離鎖定
+    const pdfDataCopy = pdfData.slice(0);
+    const loadingTask = pdfjsLib.getDocument({ data: pdfDataCopy });
     
+    const timeoutPromise = new Promise((_, reject) => 
+      setTimeout(() => reject(new Error("PDF 解析超時")), 12000)
+    );
+
     const pdf = await Promise.race([loadingTask.promise, timeoutPromise]);
     if (taskId !== currentLoadingTaskId) return;
 
@@ -347,11 +347,12 @@ async function renderFlipbook(pdfData, taskId) {
       hideLoading();
     }
 
+    // 💡 背景頁面繪製：放大間隔時間至 120ms，讓出 CPU 資源維護翻頁順暢
     (async () => {
       for (let p = 3; p <= totalPagesCount; p++) {
         if (taskId !== currentLoadingTaskId) break;
         await renderSinglePage(p);
-        await new Promise(r => setTimeout(r, 10));
+        await new Promise(r => setTimeout(r, 120));
       }
     })();
 
@@ -521,4 +522,14 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     });
   }
+
+  // 💡 全螢幕切換/退出時自動重置縮放並重新計算 3D 佈局
+  document.addEventListener('fullscreenchange', () => {
+    resetZoom();
+    if (currentPageFlip) {
+      setTimeout(() => {
+        currentPageFlip.update();
+      }, 150);
+    }
+  });
 });
