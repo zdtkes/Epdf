@@ -7,11 +7,12 @@ let currentPageFlip = null;
 let currentPdfDoc = null;
 let totalPagesCount = 0;
 let currentLoadingTaskId = 0;
+let rawPdfBuffer = null; // 快取當前開啟的原始 PDF，供 Resize 時重繪
 
 // ⚡ 核心狀態與永久圖片快取
-const renderedImageCache = new Map(); // pageNum -> BlobURL (永不銷毀，往回翻 0 延遲)
-const renderingPagesSet = new Set();  // 正在繪製中的頁面
-let isFlipAnimating = false;         // 翻頁動畫進行中標記
+const renderedImageCache = new Map(); 
+const renderingPagesSet = new Set();  
+let isFlipAnimating = false;         
 
 // ⚡ 1. 記憶體快取 (RAM Cache - PDF 原始檔)
 const pdfMemoryCache = new Map();
@@ -107,7 +108,8 @@ async function loadDrivePDF(fileId) {
 
   if (pdfMemoryCache.has(fileId)) {
     showLoading('⚡ 從記憶體秒開電子書...');
-    await renderFlipbook(pdfMemoryCache.get(fileId), taskId);
+    rawPdfBuffer = pdfMemoryCache.get(fileId);
+    await renderFlipbook(rawPdfBuffer, taskId);
     return;
   }
 
@@ -115,6 +117,7 @@ async function loadDrivePDF(fileId) {
   const localDiskData = await getCachedPDFFromDisk(fileId);
   if (localDiskData) {
     pdfMemoryCache.set(fileId, localDiskData);
+    rawPdfBuffer = localDiskData;
     showLoading('⚡ 從本機磁碟秒開電子書...');
     if (taskId === currentLoadingTaskId) {
       await renderFlipbook(localDiskData, taskId);
@@ -164,6 +167,7 @@ async function loadDrivePDF(fileId) {
 
     if (taskId === currentLoadingTaskId) {
       pdfMemoryCache.set(fileId, finalBuffer);
+      rawPdfBuffer = finalBuffer;
       await saveCachedPDFToDisk(fileId, finalBuffer);
       await renderFlipbook(finalBuffer, taskId);
     }
@@ -190,6 +194,7 @@ async function loadDrivePDFSafeGAS(fileId, taskId) {
       for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i);
 
       pdfMemoryCache.set(fileId, bytes);
+      rawPdfBuffer = bytes;
       await saveCachedPDFToDisk(fileId, bytes);
       await renderFlipbook(bytes, taskId);
     }
@@ -202,12 +207,11 @@ async function loadDrivePDFSafeGAS(fileId, taskId) {
 }
 
 /**
- * ⚡ 單頁 Canvas 繪製器（渲染完成後永久快取，不再重複繪製）
+ * ⚡ 單頁 Canvas 繪製器
  */
 async function renderPageToCache(pageNum, taskId) {
   if (pageNum < 1 || pageNum > totalPagesCount) return;
   
-  // 1. 若已經繪製過，直接確認 DOM 內容存在即可（0 CPU 開銷）
   if (renderedImageCache.has(pageNum)) {
     const imgUrl = renderedImageCache.get(pageNum);
     const targetDiv = document.getElementById(`page-node-${pageNum}`);
@@ -222,7 +226,7 @@ async function renderPageToCache(pageNum, taskId) {
 
   try {
     const page = await currentPdfDoc.getPage(pageNum);
-    const renderScale = Math.min(window.devicePixelRatio || 1, 1.15);
+    const renderScale = Math.min(window.devicePixelRatio || 1, 1.2);
     const viewport = page.getViewport({ scale: renderScale });
 
     const canvas = document.createElement('canvas');
@@ -232,12 +236,10 @@ async function renderPageToCache(pageNum, taskId) {
 
     await page.render({ canvasContext: context, viewport: viewport }).promise;
 
-    const imgBlob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.75));
+    const imgBlob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.8));
     if (!imgBlob || taskId !== currentLoadingTaskId) return;
 
     const imgUrl = URL.createObjectURL(imgBlob);
-    
-    // 💡 寫入永久圖片快取
     renderedImageCache.set(pageNum, imgUrl);
 
     const targetDiv = document.getElementById(`page-node-${pageNum}`);
@@ -252,23 +254,20 @@ async function renderPageToCache(pageNum, taskId) {
 }
 
 /**
- * 🧠 智慧背景排程佇列：在空閒時預先畫完所有頁面
+ * 🧠 智慧背景排程佇列
  */
 async function startBackgroundQueue(taskId) {
   while (renderedImageCache.size < totalPagesCount) {
     if (taskId !== currentLoadingTaskId) break;
 
-    // 若使用者正在翻頁，暫停背景渲染，將 CPU 100% 給予 3D 動畫
     if (isFlipAnimating) {
       await new Promise(r => setTimeout(r, 150));
       continue;
     }
 
-    // 計算當前顯示的頁面，優先預載前後頁
     const currentIdx = currentPageFlip ? (currentPageFlip.getCurrentPageIndex() + 1) : 1;
     let targetPage = null;
 
-    // 優先順序：當前頁 -> 未來 1~4 頁 -> 過去 1~2 頁
     const priorityCandidates = [
       currentIdx, currentIdx + 1, currentIdx + 2, currentIdx + 3,
       currentIdx + 4, currentIdx - 1, currentIdx - 2
@@ -281,7 +280,6 @@ async function startBackgroundQueue(taskId) {
       }
     }
 
-    // 若周圍都已渲染完，尋找整本書第一個尚未渲染的頁面
     if (!targetPage) {
       for (let p = 1; p <= totalPagesCount; p++) {
         if (!renderedImageCache.has(p) && !renderingPagesSet.has(p)) {
@@ -295,19 +293,17 @@ async function startBackgroundQueue(taskId) {
       await renderPageToCache(targetPage, taskId);
     }
 
-    // 每頁之間微幅間隔，維持網頁響應流暢
     await new Promise(r => setTimeout(r, 60));
   }
 }
 
 /**
- * 📖 3D 電子書渲染主引擎
+ * 📖 3D 電子書渲染主引擎（含手機端精準尺寸計算）
  */
 async function renderFlipbook(pdfData, taskId) {
   showLoading('⚡ 正在排版 3D 電子書...');
   resetZoom();
 
-  // 清理上一本書的圖片記憶體快取
   renderedImageCache.forEach(url => URL.revokeObjectURL(url));
   renderedImageCache.clear();
   renderingPagesSet.clear();
@@ -354,23 +350,27 @@ async function renderFlipbook(pdfData, taskId) {
     const unscaledViewport = firstPage.getViewport({ scale: 1.0 });
     const pdfAspectRatio = unscaledViewport.width / unscaledViewport.height;
 
-    const availHeight = Math.max(320, window.innerHeight - 105);
-    const availWidth = Math.max(300, window.innerWidth - 20);
+    // 📱 手機端與桌面端精準尺寸計算
     const isMobile = window.innerWidth <= 768;
+    // 扣除工具列後的可用邊界 (留適度 padding 防止貼邊)
+    const availHeight = Math.max(300, (window.innerHeight || document.documentElement.clientHeight) - 120);
+    const availWidth = Math.max(280, (window.innerWidth || document.documentElement.clientWidth) - 20);
 
     let pageW, pageH;
     if (isMobile) {
+      // 手機端：單頁顯示
       if (availWidth / availHeight > pdfAspectRatio) {
-        pageH = availHeight;
+        pageH = Math.floor(availHeight);
         pageW = Math.floor(pageH * pdfAspectRatio);
       } else {
-        pageW = availWidth;
+        pageW = Math.floor(availWidth);
         pageH = Math.floor(pageW / pdfAspectRatio);
       }
     } else {
+      // 桌面端：雙頁展書
       const spreadRatio = 2 * pdfAspectRatio;
       if (availWidth / availHeight > spreadRatio) {
-        pageH = availHeight;
+        pageH = Math.floor(availHeight);
         pageW = Math.floor(pageH * pdfAspectRatio);
       } else {
         pageW = Math.floor(availWidth / 2);
@@ -393,14 +393,14 @@ async function renderFlipbook(pdfData, taskId) {
       height: pageH,
       size: "fixed",
       showCover: true,
-      usePortrait: true,
-      clickToFlip: true
+      usePortrait: isMobile, // 手機端開啟 Portrait 單頁模式
+      clickToFlip: true,
+      maxShadowOpacity: isMobile ? 0.2 : 0.5 // 手機端降低陰影減輕 GPU 負擔
     });
 
     currentPageFlip = pageFlip;
     pageFlip.loadFromHTML(pageElements);
 
-    // 💡 監聽翻頁狀態：翻頁動作中暫停背景繪製
     pageFlip.on('changeState', (e) => {
       isFlipAnimating = (e.data !== 'read');
     });
@@ -410,7 +410,7 @@ async function renderFlipbook(pdfData, taskId) {
       updatePageNumDisplay(currentPageNum, totalPagesCount);
     });
 
-    // ⚡ 1. 極速開檔：立刻渲染第 1、2、3 頁，完成後立即關閉載入視窗 (0.5秒秒開)
+    // 極速開檔：立刻渲染第 1、2、3 頁
     showLoading('⚡ 正在產生封面與前幾頁...');
     const initPages = [1, 2, 3].filter(p => p <= totalPagesCount);
     await Promise.all(initPages.map(p => renderPageToCache(p, taskId)));
@@ -419,7 +419,6 @@ async function renderFlipbook(pdfData, taskId) {
       hideLoading();
     }
 
-    // ⚡ 2. 啟動背景佇列：在空閒時默默把剩餘頁面全數畫完並快取
     startBackgroundQueue(taskId);
 
   } catch (err) {
@@ -501,6 +500,17 @@ function updateSliderUI(current, total) {
   updatePageNumDisplay(current, total);
 }
 
+// 📱 視窗 resize / 轉向防彈跳自動校正
+let resizeTimer = null;
+window.addEventListener('resize', () => {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => {
+    if (rawPdfBuffer && currentLoadingTaskId) {
+      renderFlipbook(rawPdfBuffer, currentLoadingTaskId);
+    }
+  }, 300);
+});
+
 // 事件綁定
 document.addEventListener('DOMContentLoaded', () => {
   fetchDrivePDFList();
@@ -557,7 +567,8 @@ document.addEventListener('DOMContentLoaded', () => {
         const reader = new FileReader();
         reader.onload = function() { 
           const taskId = ++currentLoadingTaskId;
-          renderFlipbook(new Uint8Array(this.result), taskId); 
+          rawPdfBuffer = new Uint8Array(this.result);
+          renderFlipbook(rawPdfBuffer, taskId); 
         };
         reader.readAsArrayBuffer(file);
       }
