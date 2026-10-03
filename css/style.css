@@ -1,61 +1,243 @@
-/* Google Drive 網址輸入區樣式 */
+* {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+body, html {
+  width: 100vw;
+  height: 100vh;
+  background-color: #121212;
+  color: #f0f0f0;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+/* 頂部列 */
+.reader-header {
+  height: 50px;
+  background: #1e1e1e;
+  border-bottom: 1px solid #2d2d2d;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 16px;
+  z-index: 10;
+}
+
+.brand {
+  font-weight: 600;
+  font-size: 15px;
+  color: #4facfe;
+}
+
+.header-controls {
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+select {
+  background: #2b2b2b;
+  color: #fff;
+  border: 1px solid #3d3d3d;
+  padding: 6px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+  outline: none;
+  cursor: pointer;
+  max-width: 250px;
+}
+
+.icon-btn {
+  background: #2b2b2b;
+  color: #ccc;
+  border: 1px solid #3d3d3d;
+  padding: 6px 12px;
+  border-radius: 6px;
+  cursor: pointer;
+  font-size: 13px;
+}
+
+/* 上傳區塊 */
+.dropzone-box {
+  background: rgba(18, 18, 18, 0.95);
+  padding: 20px 10px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  border-bottom: 1px solid #2a2a2a;
+}
+
+.dropzone {
+  width: 100%;
+  max-width: 550px;
+  padding: 20px;
+  border: 2px dashed #4facfe;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.02);
+  text-align: center;
+}
+
+.dropzone-icon {
+  font-size: 36px;
+  margin-bottom: 6px;
+}
+
+.dropzone h2 {
+  font-size: 18px;
+  color: #fff;
+  margin-bottom: 4px;
+}
+
+.dropzone p {
+  font-size: 12px;
+  color: #aaa;
+  margin-bottom: 12px;
+}
+
 .url-input-container {
   display: flex;
   gap: 8px;
   width: 100%;
-  max-width: 480px;
-  margin: 15px auto 0;
+  margin: 10px 0;
 }
 
 #gdrive-url-input {
   flex: 1;
-  padding: 10px 14px;
-  border-radius: 8px;
+  padding: 8px 12px;
+  border-radius: 6px;
   border: 1px solid #3d3d3d;
-  background: rgba(0, 0, 0, 0.4);
+  background: #000;
   color: #fff;
   font-size: 13px;
-  outline: none;
-  transition: border-color 0.2s;
-}
-
-#gdrive-url-input:focus {
-  border-color: #4facfe;
 }
 
 .btn-secondary {
   background: #2b2b2b;
   color: #fff;
   border: 1px solid #3d3d3d;
-  padding: 10px 16px;
-  border-radius: 8px;
+  padding: 8px 14px;
+  border-radius: 6px;
   cursor: pointer;
   font-size: 13px;
   white-space: nowrap;
-  transition: all 0.2s;
 }
 
-.btn-secondary:hover {
-  background: #3a3a3a;
-  border-color: #4facfe;
-  color: #4facfe;
+.btn-primary {
+  display: inline-block;
+  background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
+  color: #000;
+  font-weight: 600;
+  padding: 8px 20px;
+  border-radius: 20px;
+  cursor: pointer;
+  font-size: 13px;
 }
 
-/* 分隔線 */
 .divider {
-  margin: 16px 0;
+  margin: 10px 0;
   display: flex;
   align-items: center;
-  color: #666;
+  color: #555;
   font-size: 12px;
 }
-
 .divider::before, .divider::after {
-  content: "";
+  content: ""; flex: 1; border-bottom: 1px solid #333;
+}
+.divider span { padding: 0 8px; }
+
+/* 閱讀主區域 */
+.flipbook-viewport {
   flex: 1;
-  border-bottom: 1px solid #333;
+  width: 100%;
+  position: relative;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 10px;
+  overflow: hidden;
 }
 
-.divider span {
-  padding: 0 10px;
+.my-page {
+  background-color: #ffffff;
+  width: 100%;
+  height: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  overflow: hidden;
+  box-shadow: inset 0 0 8px rgba(0,0,0,0.1);
 }
+
+.my-page img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+}
+
+/* 底部工具列 */
+.reader-footer {
+  height: 52px;
+  background: #1e1e1e;
+  border-top: 1px solid #2d2d2d;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 15px;
+  padding: 0 20px;
+}
+
+.nav-btn {
+  background: #2b2b2b;
+  color: #fff;
+  border: 1px solid #3d3d3d;
+  width: 32px;
+  height: 32px;
+  border-radius: 50%;
+  cursor: pointer;
+}
+
+.progress-container {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  width: 260px;
+}
+
+#page-num {
+  font-size: 13px;
+  color: #aaa;
+  min-width: 50px;
+  text-align: center;
+}
+
+#page-slider {
+  flex: 1;
+  accent-color: #4facfe;
+}
+
+#loading-overlay {
+  position: absolute;
+  top: 0; left: 0; right: 0; bottom: 0;
+  background: rgba(18, 18, 18, 0.85);
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  z-index: 30;
+}
+
+.spinner {
+  width: 36px;
+  height: 36px;
+  border: 3px solid rgba(255, 255, 255, 0.1);
+  border-left-color: #4facfe;
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+  margin-bottom: 12px;
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
