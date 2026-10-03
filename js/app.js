@@ -1,5 +1,6 @@
 pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
+// GAS Web App 部署網址
 const GAS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbx3SATCw9BdhW50U78iOypUJlUhgqiQkLPCrvYyeeDLbpyg1C1UbTpA3CPAtPQWBXTExA/exec";
 
 let currentPageFlip = null;
@@ -10,10 +11,10 @@ const loadingOverlay = document.getElementById('loading-overlay');
 const loadingText = document.getElementById('loading-text');
 
 /**
- * ⚡ 極速下載雲端 PDF
+ * ⚡ 讀取雲端 PDF（含 %PDF 格式檢查與自動降級）
  */
 async function loadDrivePDF(fileId) {
-  showLoading('⚡ 正在從 Google 雲端極速下載 PDF...');
+  showLoading('⚡ 正在從 Google 雲端載入 PDF...');
   const directCdnUrl = `https://lh3.googleusercontent.com/d/${fileId}`;
 
   try {
@@ -21,31 +22,42 @@ async function loadDrivePDF(fileId) {
     if (!response.ok) throw new Error(`HTTP 狀態碼 ${response.status}`);
 
     const arrayBuffer = await response.arrayBuffer();
-    await renderFlipbook(new Uint8Array(arrayBuffer));
+    const pdfBytes = new Uint8Array(arrayBuffer);
+
+    // 💡 關鍵驗證：檢查檔案前 4 個 Byte 是否為 %PDF (% = 0x25, P = 0x50, D = 0x44, F = 0x46)
+    const isPdfFormat = pdfBytes[0] === 0x25 && pdfBytes[1] === 0x50 && pdfBytes[2] === 0x44 && pdfBytes[3] === 0x46;
+
+    if (!isPdfFormat) {
+      throw new Error("抓取到的內容非有效 PDF 格式（可能為 Google 驗證頁面）");
+    }
+
+    // 驗證通過，進行 3D 排版
+    await renderFlipbook(pdfBytes);
 
   } catch (err) {
-    console.warn("CDN 直連失敗，切換至備用串流管道:", err);
+    console.warn("CDN 直連失敗或內容非 PDF，自動切換至 GAS 備用串流管道:", err);
     await loadDrivePDFviaGAS(fileId);
   }
 }
 
 /**
- * 備用 GAS 下載管道
+ * 備用 GAS 串流分段下載管道 (100% 確保拿到純 PDF 數據)
  */
 async function loadDrivePDFviaGAS(fileId) {
   try {
+    showLoading('☁️ 正在透過備用管道下載 PDF...');
     const metaRes = await fetch(`${GAS_WEB_APP_URL}?id=${fileId}&action=meta`);
     const meta = await metaRes.json();
     if (meta.status === "error") throw new Error(meta.message);
 
     const totalSize = meta.size;
-    const chunkSize = 3 * 1024 * 1024;
+    const chunkSize = 3 * 1024 * 1024; // 每次 3MB
     const finalBuffer = new Uint8Array(totalSize);
     let loadedBytes = 0;
 
     while (loadedBytes < totalSize) {
       const percent = Math.round((loadedBytes / totalSize) * 100);
-      showLoading(`☁️ 備用下載中 (${percent}%)...`);
+      showLoading(`☁️ 下載雲端 PDF (${percent}%)...`);
 
       const chunkRes = await fetch(`${GAS_WEB_APP_URL}?id=${fileId}&start=${loadedBytes}&length=${chunkSize}`);
       const chunkJson = await chunkRes.json();
@@ -98,7 +110,7 @@ async function handleUrlInput(url) {
 async function renderFlipbook(pdfData) {
   showLoading('⚡ 正在生成 3D 電子書頁面...');
 
-  // 💡 自動隱藏上傳區域，騰出完整空間給電子書
+  // 自動隱藏拖曳上傳區塊
   const dropzoneSection = document.getElementById('dropzone-section');
   if (dropzoneSection) {
     dropzoneSection.style.display = 'none';
@@ -126,7 +138,7 @@ async function renderFlipbook(pdfData) {
     const unscaledViewport = firstPage.getViewport({ scale: 1.0 });
     const pdfAspectRatio = unscaledViewport.width / unscaledViewport.height;
 
-    // 精確計算可用剩餘高度 (扣除 Header 50px 與 Footer 52px)
+    // 計算視窗剩餘高度
     const navHeight = 50;
     const footerHeight = 52;
     const availHeight = Math.max(300, window.innerHeight - navHeight - footerHeight - 20);
@@ -208,6 +220,7 @@ async function renderFlipbook(pdfData) {
         targetDiv.appendChild(img);
       }
 
+      // 第 2 頁完成後立即開啟閱讀
       if (pageNum === 2 || pageNum === totalPagesCount) {
         hideLoading();
       }
@@ -216,8 +229,8 @@ async function renderFlipbook(pdfData) {
     }
 
   } catch (err) {
-    console.error("PDF 繪製失敗:", err);
-    alert("PDF 檔案解析失敗。");
+    console.error("PDF 解析失敗，詳細原因:", err);
+    alert("PDF 檔案解析失敗，原因：" + err.message);
     hideLoading();
   }
 }
@@ -281,11 +294,10 @@ function updateSliderUI(current, total) {
   updatePageNumDisplay(current, total);
 }
 
-// 初始化綁定
+// 初始化事件綁定
 document.addEventListener('DOMContentLoaded', () => {
   fetchDrivePDFList();
 
-  // 手動開關上傳區塊
   const btnToggleUpload = document.getElementById('btn-toggle-upload');
   if (btnToggleUpload) {
     btnToggleUpload.addEventListener('click', () => {
