@@ -1,6 +1,7 @@
 pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
 const GAS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzi7xUsWCMSDul7rMNiO-chdg78gmqkCCRaZN_Xw6HSQY4J5lSCciNDbMIT89qahJky/exec";
+const CF_WORKER_URL = "https://pdf-proxy.zd-81c.workers.dev/"; // 👈 請替換為您的 Cloudflare Worker 網址
 
 let currentPageFlip = null;
 let currentPdfDoc = null;
@@ -8,10 +9,10 @@ let currentBlobUrls = [];
 let totalPagesCount = 0;
 let currentLoadingTaskId = 0;
 
-// ⚡ 1. 記憶體快取 (RAM Cache - 當前頁面運行中 0 秒)
+// ⚡ 1. 記憶體快取 (RAM - 當前頁面 0 秒秒開)
 const pdfMemoryCache = new Map();
 
-// 💾 2. IndexedDB 本地永久磁碟資料庫 (重新整理/關閉瀏覽器後依然存在，0.1 秒秒開)
+// 💾 2. IndexedDB 本地永久磁碟 (關閉瀏覽器後依然存在，離線 0.1 秒秒開)
 const DB_NAME = 'PDFBookOfflineDB';
 const STORE_NAME = 'pdf_files';
 
@@ -95,23 +96,23 @@ function hideLoading() {
 }
 
 /**
- * ⚡ 三層極速載入器 (RAM 快取 -> 本地硬碟磁碟快取 -> 雲端下載)
+ * 🚀 極速直連載入器
  */
 async function loadDrivePDF(fileId) {
   const taskId = ++currentLoadingTaskId;
 
-  // 第一層：檢查記憶體快取 (RAM - 0秒)
+  // 第一層：RAM 快取 (0秒)
   if (pdfMemoryCache.has(fileId)) {
     showLoading('⚡ 從記憶體秒開電子書...');
     await renderFlipbook(pdfMemoryCache.get(fileId), taskId);
     return;
   }
 
-  // 第二層：檢查瀏覽器本地硬碟 (IndexedDB - 0.1秒離線秒開)
+  // 第二層：瀏覽器本地硬碟快取 (0.1秒秒開)
   showLoading('💾 檢查本地磁碟暫存...');
   const localDiskData = await getCachedPDFFromDisk(fileId);
   if (localDiskData) {
-    pdfMemoryCache.set(fileId, localDiskData); // 載入記憶體
+    pdfMemoryCache.set(fileId, localDiskData);
     showLoading('⚡ 從本機磁碟秒開電子書...');
     if (taskId === currentLoadingTaskId) {
       await renderFlipbook(localDiskData, taskId);
@@ -119,46 +120,68 @@ async function loadDrivePDF(fileId) {
     return;
   }
 
-  // 第三層：雲端下載 (首次閱讀)
-  showLoading('⚡ 正在從雲端下載 PDF...');
-
-  // 1. CDN 直連嘗試
-  const cdnUrl = `https://lh3.googleusercontent.com/d/${fileId}`;
+  // 第三層：Cloudflare Worker 高速二進位直連串流下載
   try {
-    const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), 1800);
+    showLoading('⚡ 正在透過高速代理連線...');
+    const proxyUrl = `${CF_WORKER_URL}/?id=${fileId}`;
+    const res = await fetch(proxyUrl);
 
-    const res = await fetch(cdnUrl, { signal: controller.signal });
-    clearTimeout(timeoutId);
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
-    if (res.ok) {
-      const buf = await res.arrayBuffer();
-      const bytes = new Uint8Array(buf);
-      if (bytes[0] === 0x25 && bytes[1] === 0x50) { // %PDF
-        pdfMemoryCache.set(fileId, bytes);
-        await saveCachedPDFToDisk(fileId, bytes); // 💾 儲存至本機硬碟
-        if (taskId === currentLoadingTaskId) {
-          await renderFlipbook(bytes, taskId);
-        }
-        return;
+    const contentLength = res.headers.get('content-length');
+    const totalBytes = contentLength ? parseInt(contentLength, 10) : 0;
+    const totalMB = totalBytes ? (totalBytes / (1024 * 1024)).toFixed(1) : '?';
+
+    const reader = res.body.getReader();
+    let loadedBytes = 0;
+    const chunks = [];
+
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+
+      if (taskId !== currentLoadingTaskId) return;
+
+      chunks.push(value);
+      loadedBytes += value.length;
+
+      const loadedMB = (loadedBytes / (1024 * 1024)).toFixed(1);
+      if (totalBytes > 0) {
+        const percent = Math.round((loadedBytes / totalBytes) * 100);
+        showLoading(`🚀 直連極速下載中 (${loadedMB} / ${totalMB} MB - ${percent}%)...`);
+      } else {
+        showLoading(`🚀 直連極速下載中 (${loadedMB} MB)...`);
       }
     }
-  } catch (e) {
-    console.warn("CDN 直連失敗，轉用 GAS 傳輸...");
-  }
 
-  // 2. GAS 下載
-  if (taskId === currentLoadingTaskId) {
-    await loadDrivePDFSafeGAS(fileId, taskId);
+    // 合併二進位資料
+    const finalBuffer = new Uint8Array(loadedBytes);
+    let offset = 0;
+    for (const chunk of chunks) {
+      finalBuffer.set(chunk, offset);
+      offset += chunk.length;
+    }
+
+    if (taskId === currentLoadingTaskId) {
+      pdfMemoryCache.set(fileId, finalBuffer);
+      await saveCachedPDFToDisk(fileId, finalBuffer); // 💾 寫入本機硬碟供下次秒開
+      await renderFlipbook(finalBuffer, taskId);
+    }
+
+  } catch (err) {
+    console.error("Cloudflare 直連失敗，轉用 GAS 備援傳輸...", err);
+    if (taskId === currentLoadingTaskId) {
+      await loadDrivePDFSafeGAS(fileId, taskId);
+    }
   }
 }
 
 /**
- * 🚀 GAS 傳輸引擎
+ * 🛡️ GAS 傳輸備援機制
  */
 async function loadDrivePDFSafeGAS(fileId, taskId) {
   try {
-    showLoading('⚡ 雲端傳輸中...');
+    showLoading('⚡ 轉用 GAS 雲端傳輸...');
     const res = await fetch(`${GAS_WEB_APP_URL}?id=${fileId}`);
     const data = await res.json();
 
@@ -167,94 +190,13 @@ async function loadDrivePDFSafeGAS(fileId, taskId) {
     if (data.status === "success" && data.data) {
       const binaryStr = window.atob(data.data);
       const bytes = new Uint8Array(binaryStr.length);
-      for (let i = 0; i < binaryStr.length; i++) {
-        bytes[i] = binaryStr.charCodeAt(i);
-      }
+      for (let i = 0; i < binaryStr.length; i++) bytes[i] = binaryStr.charCodeAt(i);
+
       pdfMemoryCache.set(fileId, bytes);
-      await saveCachedPDFToDisk(fileId, bytes); // 💾 儲存至本機硬碟
+      await saveCachedPDFToDisk(fileId, bytes);
       await renderFlipbook(bytes, taskId);
-      return;
     }
-
-    if (data.status === "error" && data.message && data.message.includes("meta")) {
-      await loadDrivePDFChunkedGAS(fileId, taskId);
-    } else {
-      throw new Error(data.message || "檔案讀取失敗");
-    }
-
   } catch (err) {
-    if (taskId === currentLoadingTaskId) {
-      await loadDrivePDFChunkedGAS(fileId, taskId);
-    }
-  }
-}
-
-/**
- * 🛡️ 大檔案分段傳輸備援
- */
-async function loadDrivePDFChunkedGAS(fileId, taskId) {
-  try {
-    const metaRes = await fetch(`${GAS_WEB_APP_URL}?id=${fileId}&action=meta`);
-    const meta = await metaRes.json();
-    if (meta.status === "error") throw new Error(meta.message);
-
-    const totalSize = meta.size;
-    const chunkSize = 2 * 1024 * 1024;
-    const totalChunks = Math.ceil(totalSize / chunkSize);
-    const finalBuffer = new Uint8Array(totalSize);
-
-    async function fetchChunkWithRetry(start, length) {
-      for (let attempt = 0; attempt < 3; attempt++) {
-        try {
-          const r = await fetch(`${GAS_WEB_APP_URL}?id=${fileId}&start=${start}&length=${length}`);
-          const json = await r.json();
-          if (json.status === "success") return json;
-        } catch (e) {}
-        await new Promise(res => setTimeout(res, 300));
-      }
-      throw new Error(`區塊 (${start}) 傳輸失敗`);
-    }
-
-    let completedChunks = 0;
-    const tasks = [];
-
-    for (let i = 0; i < totalChunks; i++) {
-      tasks.push(async () => {
-        if (taskId !== currentLoadingTaskId) return;
-        const start = i * chunkSize;
-        const chunkJson = await fetchChunkWithRetry(start, chunkSize);
-        
-        const binaryStr = window.atob(chunkJson.data);
-        for (let j = 0; j < binaryStr.length; j++) {
-          finalBuffer[start + j] = binaryStr.charCodeAt(j);
-        }
-
-        completedChunks++;
-        const percent = Math.round((completedChunks / totalChunks) * 100);
-        showLoading(`⚡ 分段下載中 (${percent}%)...`);
-      });
-    }
-
-    const poolLimit = 2;
-    const executing = [];
-    for (const task of tasks) {
-      if (taskId !== currentLoadingTaskId) return;
-      const p = task().then(() => executing.splice(executing.indexOf(p), 1));
-      executing.push(p);
-      if (executing.length >= poolLimit) {
-        await Promise.race(executing);
-      }
-    }
-    await Promise.all(executing);
-
-    if (taskId === currentLoadingTaskId) {
-      pdfMemoryCache.set(fileId, finalBuffer);
-      await saveCachedPDFToDisk(fileId, finalBuffer); // 💾 儲存至本機硬碟
-      await renderFlipbook(finalBuffer, taskId);
-    }
-
-  } catch (err) {
-    console.error("下載失敗:", err);
     if (taskId === currentLoadingTaskId) {
       alert("開啟 PDF 失敗：" + err.message);
       hideLoading();
@@ -297,7 +239,7 @@ async function renderFlipbook(pdfData, taskId) {
   try {
     const loadingTask = pdfjsLib.getDocument({ data: pdfData });
     const timeoutPromise = new Promise((_, reject) => 
-      setTimeout(() => reject(new Error("PDF 解析超時")), 10000)
+      setTimeout(() => reject(new Error("PDF 解析超時")), 12000)
     );
 
     const pdf = await Promise.race([loadingTask.promise, timeoutPromise]);
