@@ -4,177 +4,83 @@
   padding: 0;
 }
 
-body, html {
-  width: 100vw;
+body {
+  font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  background-color: #1a1a1a;
+  color: #fff;
   height: 100vh;
-  background-color: #121212;
-  color: #f0f0f0;
-  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-  overflow: hidden;
   display: flex;
   flex-direction: column;
+  overflow: hidden;
 }
 
-/* 頂部列 */
-.reader-header {
-  height: 48px;
-  background: #1e1e1e;
-  border-bottom: 1px solid #2d2d2d;
+/* 頂部導航列 */
+.top-bar {
+  height: 50px;
+  background-color: #2a2a2a;
   display: flex;
+  align-items: center;
   justify-content: space-between;
-  align-items: center;
-  padding: 0 12px;
+  padding: 0 16px;
+  border-bottom: 1px solid #333;
   z-index: 10;
-  flex-shrink: 0;
 }
 
-.brand {
-  font-weight: 600;
-  font-size: 15px;
-  color: #4facfe;
-  white-space: nowrap;
-}
-
-.header-controls {
+.header-right {
   display: flex;
-  gap: 6px;
   align-items: center;
+  gap: 8px;
 }
 
-select {
-  background: #2b2b2b;
-  color: #fff;
-  border: 1px solid #3d3d3d;
-  padding: 5px 8px;
-  border-radius: 6px;
-  font-size: 12px;
-  outline: none;
-  cursor: pointer;
-  max-width: 220px;
-  text-overflow: ellipsis;
-  white-space: nowrap;
-}
-
-.icon-btn {
-  background: #2b2b2b;
-  color: #ccc;
-  border: 1px solid #3d3d3d;
-  padding: 5px 10px;
-  border-radius: 6px;
-  cursor: pointer;
-  font-size: 12px;
-  white-space: nowrap;
-}
-
-.icon-btn:hover {
-  background: #3a3a3a;
-  color: #fff;
-}
-
-/* 上傳區塊 */
-.dropzone-box {
-  background: rgba(18, 18, 18, 0.95);
-  padding: 12px 10px;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  border-bottom: 1px solid #2a2a2a;
-  flex-shrink: 0;
-  z-index: 5;
-}
-
-.dropzone {
-  width: 100%;
-  max-width: 500px;
-  padding: 14px;
-  border: 2px dashed #4facfe;
-  border-radius: 10px;
-  background: rgba(255, 255, 255, 0.02);
-  text-align: center;
-}
-
-.dropzone-icon { font-size: 28px; margin-bottom: 2px; }
-.dropzone h2 { font-size: 15px; color: #fff; margin-bottom: 2px; }
-.dropzone p { font-size: 11px; color: #aaa; margin-bottom: 8px; }
-
-.url-input-container {
-  display: flex;
-  gap: 6px;
-  width: 100%;
-  margin: 6px 0;
-}
-
-#gdrive-url-input {
-  flex: 1;
+.header-right select, .header-right input {
   padding: 6px 10px;
-  border-radius: 6px;
-  border: 1px solid #3d3d3d;
-  background: #000;
+  border-radius: 4px;
+  border: 1px solid #444;
+  background-color: #333;
   color: #fff;
-  font-size: 12px;
-  min-width: 0;
+  font-size: 13px;
 }
 
-.btn-secondary {
-  background: #2b2b2b;
-  color: #fff;
-  border: 1px solid #3d3d3d;
+.btn {
   padding: 6px 12px;
-  border-radius: 6px;
+  background-color: #383838;
+  color: #fff;
+  border: 1px solid #555;
+  border-radius: 4px;
   cursor: pointer;
-  font-size: 12px;
-  white-space: nowrap;
+  font-size: 13px;
+  transition: background-color 0.2s;
 }
 
-.btn-primary {
-  display: inline-block;
-  background: linear-gradient(135deg, #4facfe 0%, #00f2fe 100%);
-  color: #000;
-  font-weight: 600;
-  padding: 6px 16px;
-  border-radius: 16px;
-  cursor: pointer;
-  font-size: 12px;
+.btn:hover {
+  background-color: #505050;
 }
 
-.divider {
-  margin: 6px 0;
-  display: flex;
-  align-items: center;
-  color: #555;
-  font-size: 11px;
-}
-.divider::before, .divider::after { content: ""; flex: 1; border-bottom: 1px solid #333; }
-.divider span { padding: 0 6px; }
-
-/* 閱讀主區域 (電腦滿版放大) */
+/* 電子書畫布 (滿版最大化與滾動檢視支援) */
 .flipbook-viewport {
   flex: 1;
-  width: 100%;
-  height: 100%;
-  position: relative;
+  width: 100vw;
+  height: calc(100vh - 100px);
   display: flex;
   justify-content: center;
   align-items: center;
-  padding: 4px;
-  overflow: hidden;
+  overflow: auto;
+  position: relative;
+  background-color: #111;
 }
 
 #flipbook {
-  display: flex;
-  justify-content: center;
-  align-items: center;
+  transition: transform 0.15s cubic-bezier(0.25, 1, 0.5, 1);
+  transform-origin: center center;
+  box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
 }
 
 .my-page {
-  background-color: #ffffff;
-  width: 100%;
-  height: 100%;
+  background-color: #fff;
   display: flex;
   justify-content: center;
   align-items: center;
   overflow: hidden;
-  box-shadow: inset 0 0 10px rgba(0,0,0,0.12);
 }
 
 .my-page img {
@@ -183,83 +89,57 @@ select {
   object-fit: contain;
 }
 
-/* 底部工具列 */
-.reader-footer {
-  height: 48px;
-  background: #1e1e1e;
-  border-top: 1px solid #2d2d2d;
+/* 底部控制列 */
+.controls-bar {
+  height: 50px;
+  background-color: #2a2a2a;
   display: flex;
+  align-items: center;
   justify-content: center;
-  align-items: center;
-  gap: 12px;
-  padding: 0 12px;
-  flex-shrink: 0;
+  gap: 15px;
+  border-top: 1px solid #333;
+  z-index: 10;
 }
 
-.nav-btn {
-  background: #2b2b2b;
-  color: #fff;
-  border: 1px solid #3d3d3d;
-  width: 32px;
-  height: 32px;
-  border-radius: 50%;
-  cursor: pointer;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  flex-shrink: 0;
-}
-
-.progress-container {
+.zoom-controls {
   display: flex;
   align-items: center;
-  gap: 8px;
-  width: 320px;
-  max-width: 60vw;
+  gap: 6px;
+  margin-left: 20px;
+  padding-left: 15px;
+  border-left: 1px solid #444;
 }
 
-#page-num {
-  font-size: 12px;
-  color: #aaa;
-  min-width: 48px;
+#zoom-level-text {
+  font-size: 13px;
+  min-width: 45px;
   text-align: center;
-  white-space: nowrap;
+  color: #ddd;
 }
 
-#page-slider {
-  flex: 1;
-  accent-color: #4facfe;
-  cursor: pointer;
-}
-
+/* 載入中遮罩 */
 #loading-overlay {
-  position: absolute;
+  position: fixed;
   top: 0; left: 0; right: 0; bottom: 0;
-  background: rgba(18, 18, 18, 0.88);
+  background: rgba(0, 0, 0, 0.75);
   display: flex;
   flex-direction: column;
   justify-content: center;
   align-items: center;
-  z-index: 30;
+  z-index: 9999;
 }
 
 .spinner {
-  width: 36px;
-  height: 36px;
-  border: 3px solid rgba(255, 255, 255, 0.1);
-  border-left-color: #4facfe;
+  width: 40px;
+  height: 40px;
+  border: 4px solid #555;
+  border-top: 4px solid #00d2ff;
   border-radius: 50%;
-  animation: spin 0.8s linear infinite;
-  margin-bottom: 10px;
+  animation: spin 1s linear infinite;
+  margin-bottom: 12px;
 }
 
-@keyframes spin { to { transform: rotate(360deg); } }
-
-/* 📱 手機端 RWD 防跑版 */
-@media (max-width: 768px) {
-  .brand { font-size: 13px; }
-  select { max-width: 120px; font-size: 11px; }
-  .btn-text { display: none; }
-  .progress-container { width: 100%; max-width: none; }
-  .reader-footer { gap: 8px; padding: 0 8px; }
+@keyframes spin {
+  0% { transform: rotate(0deg); }
+  100% { transform: rotate(360deg); }
 }
