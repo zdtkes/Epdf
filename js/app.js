@@ -371,7 +371,7 @@ async function renderFlipbook(pdfData, taskId) {
 
     // 📐 自動判斷：手機端 OR 橫式 PDF 均啟用單頁全螢幕滿版
     const isMobile = window.innerWidth <= 768;
-    const isLandscape = pdfAspectRatio > 1.1; // 長寬比 > 1.1 判定為橫式
+    const isLandscape = pdfAspectRatio > 1.1; 
     const forceSinglePage = isMobile || isLandscape;
 
     const availHeight = Math.max(300, (window.innerHeight || document.documentElement.clientHeight) - 120);
@@ -379,7 +379,6 @@ async function renderFlipbook(pdfData, taskId) {
 
     let pageW, pageH;
     if (forceSinglePage) {
-      // 單頁滿版極限尺寸計算
       if (availWidth / availHeight > pdfAspectRatio) {
         pageH = Math.floor(availHeight);
         pageW = Math.floor(pageH * pdfAspectRatio);
@@ -388,7 +387,6 @@ async function renderFlipbook(pdfData, taskId) {
         pageH = Math.floor(pageW / pdfAspectRatio);
       }
     } else {
-      // 直式 PDF 桌面端雙頁展書
       const spreadRatio = 2 * pdfAspectRatio;
       if (availWidth / availHeight > spreadRatio) {
         pageH = Math.floor(availHeight);
@@ -412,8 +410,8 @@ async function renderFlipbook(pdfData, taskId) {
       width: pageW,
       height: pageH,
       size: "fixed",
-      showCover: !isLandscape, // 橫式單頁時不強制雙頁封面
-      usePortrait: forceSinglePage, // 強制單頁呈現
+      showCover: !isLandscape,
+      usePortrait: forceSinglePage,
       clickToFlip: true,
       maxShadowOpacity: isMobile ? 0.2 : 0.5
     });
@@ -455,7 +453,7 @@ async function fetchDrivePDFList() {
   if (!gdriveSelect) return;
 
   try {
-    showLoading('☁️️ 搜尋雲端書庫...');
+    showLoading('☁️ 搜尋雲端書庫...');
     const res = await fetch(GAS_WEB_APP_URL);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
@@ -543,40 +541,48 @@ document.addEventListener('DOMContentLoaded', () => {
   if (btnZoomOut) btnZoomOut.addEventListener('click', () => applyZoom(currentZoomScale - ZOOM_STEP));
   if (btnZoomReset) btnZoomReset.addEventListener('click', resetZoom);
 
-  // 🖱️ 🤏 畫面拖拽平移 (Pan) 與觸控手勢整合
+  // 🖱️️ 🤏 畫面拖拽平移 (Pan) 與觸控手勢整合（防誤觸翻頁加強版）
   const activeViewport = document.querySelector('.flipbook-viewport');
   let isDragging = false;
   let startX = 0;
   let startY = 0;
 
   if (activeViewport) {
-    // 1. 電腦滑鼠拖曳 (MouseDown / Move / Up)
+    // 1. 電腦滑鼠拖曳 (MouseDown) - 使用 capture (true) 優先捕獲並攔截
     activeViewport.addEventListener('mousedown', (e) => {
       if (currentZoomScale > 1.0) {
+        // 🛑 核心修復：放大狀態下，切斷事件向下傳遞給 PageFlip，防止放開滑鼠觸發翻頁
+        e.stopPropagation();
+        e.preventDefault();
         isDragging = true;
         startX = e.clientX - panX;
         startY = e.clientY - panY;
         const flipbook = document.getElementById('flipbook');
         if (flipbook) flipbook.classList.add('is-dragging');
       }
-    });
+    }, true);
 
     window.addEventListener('mousemove', (e) => {
       if (isDragging && currentZoomScale > 1.0) {
+        e.stopPropagation();
         e.preventDefault();
         panX = e.clientX - startX;
         panY = e.clientY - startY;
         updateTransform();
       }
-    });
+    }, true);
 
-    window.addEventListener('mouseup', () => {
+    window.addEventListener('mouseup', (e) => {
       if (isDragging) {
+        if (currentZoomScale > 1.0) {
+          e.stopPropagation();
+          e.preventDefault();
+        }
         isDragging = false;
         const flipbook = document.getElementById('flipbook');
         if (flipbook) flipbook.classList.remove('is-dragging');
       }
-    });
+    }, true);
 
     // 2. 電腦滾輪 Ctrl + Wheel 縮放
     activeViewport.addEventListener('wheel', (e) => {
@@ -593,6 +599,9 @@ document.addEventListener('DOMContentLoaded', () => {
     let lastTapTime = 0;
 
     activeViewport.addEventListener('touchstart', (e) => {
+      if (currentZoomScale > 1.0) {
+        e.stopPropagation(); // 🛑 放大狀態下阻止 PageFlip 接收觸控翻頁
+      }
       if (e.touches.length === 2) {
         // 雙指捏合
         initialPinchDistance = Math.hypot(
@@ -620,9 +629,12 @@ document.addEventListener('DOMContentLoaded', () => {
         }
         lastTapTime = now;
       }
-    }, { passive: false });
+    }, { passive: false, capture: true });
 
     activeViewport.addEventListener('touchmove', (e) => {
+      if (currentZoomScale > 1.0) {
+        e.stopPropagation();
+      }
       if (e.touches.length === 2 && initialPinchDistance) {
         // 雙指捏合中
         e.preventDefault();
@@ -639,16 +651,19 @@ document.addEventListener('DOMContentLoaded', () => {
         panY = e.touches[0].clientY - startY;
         updateTransform();
       }
-    }, { passive: false });
+    }, { passive: false, capture: true });
 
     activeViewport.addEventListener('touchend', (e) => {
+      if (currentZoomScale > 1.0) {
+        e.stopPropagation();
+      }
       if (e.touches.length < 2) {
         initialPinchDistance = null;
       }
       if (e.touches.length === 0) {
         isDragging = false;
       }
-    });
+    }, { capture: true });
   }
 
   // 4. 其餘介面按鈕綁定
