@@ -4,14 +4,19 @@
   padding: 0;
 }
 
-body {
+html, body {
+  width: 100%;
+  height: 100%;
+  overflow: hidden; /* 防止手機與網頁頁面整體上下滑動 */
+  touch-action: manipulation;
   font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   background-color: #1a1a1a;
   color: #fff;
-  height: 100vh;
+}
+
+body {
   display: flex;
   flex-direction: column;
-  overflow: hidden;
 }
 
 /* 頂部導航列 */
@@ -56,37 +61,78 @@ body {
   background-color: #505050;
 }
 
-/* 電子書畫布 (滿版最大化與滾動檢視支援) */
+/* 🖥️ 電子書視窗畫布 (支援放大拖拽平移與雙指手勢) */
 .flipbook-viewport {
   flex: 1;
-  width: 100vw;
-  height: calc(100vh - 100px);
+  width: 100%;
+  height: calc(100vh - 100px); /* 扣除上下工具列高度 (50px + 50px) */
   display: flex;
   justify-content: center;
   align-items: center;
-  overflow: auto;
   position: relative;
+  overflow: hidden; /* 防止放大拖曳時超出一邊 */
   background-color: #111;
+  touch-action: none; /* 關鍵：阻止瀏覽器預設滑動，讓自訂拖拽與縮放順暢 */
+  user-select: none;
 }
 
+/* 📖 電子書主體與動畫設定 */
 #flipbook {
+  margin: 0 auto;
   transition: transform 0.15s cubic-bezier(0.25, 1, 0.5, 1);
   transform-origin: center center;
   box-shadow: 0 10px 30px rgba(0, 0, 0, 0.6);
+  will-change: transform;
 }
 
+/* 🤏 放大平移時的手勢與零延遲設定 */
+#flipbook.is-zoomed {
+  cursor: grab;
+}
+
+#flipbook.is-dragging {
+  cursor: grabbing;
+  transition: none !important; /* 拖拽滑動時關閉動畫，達到 100% 跟手零延遲 */
+}
+
+/* 📄 頁面與圖片防爆（完全相容直式雙頁與橫式單頁全螢幕） */
 .my-page {
-  background-color: #fff;
-  display: flex;
-  justify-content: center;
-  align-items: center;
+  background-color: #ffffff;
+  width: 100%;
+  height: 100%;
   overflow: hidden;
+  box-shadow: 0 0 10px rgba(0,0,0,0.1);
 }
 
 .my-page img {
   width: 100%;
   height: 100%;
-  object-fit: contain;
+  object-fit: contain; /* 確保直式與橫式 PDF 都能滿版自適應不變形 */
+  display: block;
+  pointer-events: none;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+
+/* 💡 GPU 3D 圖層硬體加速 (防止翻頁閃爍) */
+#flipbook, .stpageflip--container, .my-page {
+  will-change: transform;
+  transform: translateZ(0);
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
+
+/* 💡 輕量頁面占位骨架 */
+.page-skeleton {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  background-color: #f8f9fa;
+  color: #6c757d;
+  font-size: 14px;
+  border: 1px dashed #e2e8f0;
 }
 
 /* 底部控制列 */
@@ -139,108 +185,7 @@ body {
   margin-bottom: 12px;
 }
 
-/* 💡 強制啟用 GPU 硬體加速，防止翻頁時頁面閃爍與卡頓 */
-#flipbook, .stpageflip--container, .my-page {
-  will-change: transform;
-  transform: translateZ(0);
-  backface-visibility: hidden;
-  -webkit-backface-visibility: hidden;
-}
-
-.my-page img {
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-  pointer-events: none;
-  user-select: none;
-  -webkit-user-drag: none;
-}
-
 @keyframes spin {
   0% { transform: rotate(0deg); }
   100% { transform: rotate(360deg); }
-}
-
-/* 💡 輕量頁面占位骨架，0 資源消耗 */
-.page-skeleton {
-  width: 100%;
-  height: 100%;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  background: #f8f9fa;
-  color: #a0aec0;
-  font-size: 14px;
-  border: 1px dashed #e2e8f0;
-}
-
-/* GPU 3D 圖層硬體加速 */
-#flipbook, .stpageflip--container, .my-page {
-  will-change: transform;
-  transform: translateZ(0);
-  backface-visibility: hidden;
-  -webkit-backface-visibility: hidden;
-}
-
-.my-page img {
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-  pointer-events: none;
-  user-select: none;
-  -webkit-user-drag: none;
-}
-
-/* 容器防溢出 */
-body, html {
-  margin: 0;
-  padding: 0;
-  width: 100%;
-  height: 100%;
-  overflow: hidden; /* 防止手機上下滑動頁面 */
-  touch-action: manipulation;
-}
-
-.flipbook-viewport {
-  width: 100%;
-  height: calc(100vh - 110px); /* 扣除上下工具列高度 */
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  position: relative;
-  overflow: hidden;
-}
-
-#flipbook {
-  margin: 0 auto;
-  transition: transform 0.2s ease-out;
-}
-
-/* 頁面與圖片防爆 */
-.my-page {
-  background-color: #ffffff;
-  width: 100%;
-  height: 100%;
-  overflow: hidden;
-  box-shadow: 0 0 10px rgba(0,0,0,0.1);
-}
-
-.my-page img {
-  width: 100%;
-  height: 100%;
-  object-fit: contain; /* 確保圖片完全自適應且不變形 */
-  display: block;
-  user-select: none;
-  -webkit-user-drag: none;
-}
-
-.page-skeleton {
-  width: 100%;
-  height: 100%;
-  display: flex;
-  justify-content: center;
-  align-items: center;
-  background-color: #f8f9fa;
-  color: #6c757d;
-  font-size: 14px;
 }
