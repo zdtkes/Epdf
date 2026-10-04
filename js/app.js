@@ -7,14 +7,14 @@ let currentPageFlip = null;
 let currentPdfDoc = null;
 let totalPagesCount = 0;
 let currentLoadingTaskId = 0;
-let rawPdfBuffer = null; // 快取當前開啟的原始 PDF，供 Resize 時重繪
+let rawPdfBuffer = null;
 
 // ⚡ 核心狀態與永久圖片快取
 const renderedImageCache = new Map(); 
 const renderingPagesSet = new Set();  
 let isFlipAnimating = false;         
 
-// ⚡ 1. 記憶體快取 (RAM Cache - PDF 原始檔)
+// ⚡ 1. 記憶體快取 (RAM Cache)
 const pdfMemoryCache = new Map();
 
 // 💾 2. IndexedDB 本地永久磁碟
@@ -134,7 +134,6 @@ async function loadDrivePDF(fileId) {
 
     const contentLength = res.headers.get('content-length');
     const totalBytes = contentLength ? parseInt(contentLength, 10) : 0;
-    const totalMB = totalBytes ? (totalBytes / (1024 * 1024)).toFixed(1) : '?';
 
     const reader = res.body.getReader();
     let loadedBytes = 0;
@@ -151,6 +150,7 @@ async function loadDrivePDF(fileId) {
 
       const loadedMB = (loadedBytes / (1024 * 1024)).toFixed(1);
       if (totalBytes > 0) {
+        const totalMB = (totalBytes / (1024 * 1024)).toFixed(1);
         const percent = Math.round((loadedBytes / totalBytes) * 100);
         showLoading(`🚀 直連極速下載中 (${loadedMB} / ${totalMB} MB - ${percent}%)...`);
       } else {
@@ -197,6 +197,8 @@ async function loadDrivePDFSafeGAS(fileId, taskId) {
       rawPdfBuffer = bytes;
       await saveCachedPDFToDisk(fileId, bytes);
       await renderFlipbook(bytes, taskId);
+    } else {
+      throw new Error(data.message || "未知錯誤");
     }
   } catch (err) {
     if (taskId === currentLoadingTaskId) {
@@ -227,14 +229,14 @@ async function renderPageToCache(pageNum, taskId) {
   try {
     const page = await currentPdfDoc.getPage(pageNum);
     const renderScale = Math.min(window.devicePixelRatio || 1, 1.2);
-    const viewport = page.getViewport({ scale: renderScale });
+    const pageViewport = page.getViewport({ scale: renderScale });
 
     const canvas = document.createElement('canvas');
     const context = canvas.getContext('2d', { alpha: false });
-    canvas.height = viewport.height;
-    canvas.width = viewport.width;
+    canvas.height = pageViewport.height;
+    canvas.width = pageViewport.width;
 
-    await page.render({ canvasContext: context, viewport: viewport }).promise;
+    await page.render({ canvasContext: context, viewport: pageViewport }).promise;
 
     const imgBlob = await new Promise(resolve => canvas.toBlob(resolve, 'image/jpeg', 0.8));
     if (!imgBlob || taskId !== currentLoadingTaskId) return;
@@ -298,7 +300,7 @@ async function startBackgroundQueue(taskId) {
 }
 
 /**
- * 📖 3D 電子書渲染主引擎（含手機端精準尺寸計算）
+ * 📖 3D 電子書渲染主引擎
  */
 async function renderFlipbook(pdfData, taskId) {
   showLoading('⚡ 正在排版 3D 電子書...');
@@ -320,15 +322,15 @@ async function renderFlipbook(pdfData, taskId) {
     currentPageFlip = null;
   }
 
-  const viewportContainer = document.querySelector('.flipbook-viewport');
-  if (!viewportContainer) return;
+  const containerViewport = document.querySelector('.flipbook-viewport');
+  if (!containerViewport) return;
 
   let oldFlipbook = document.getElementById('flipbook');
   if (oldFlipbook) oldFlipbook.remove();
 
   const flipbookContainer = document.createElement('div');
   flipbookContainer.id = 'flipbook';
-  viewportContainer.appendChild(flipbookContainer);
+  containerViewport.appendChild(flipbookContainer);
 
   try {
     const pdfDataCopy = pdfData.slice(0);
@@ -350,15 +352,12 @@ async function renderFlipbook(pdfData, taskId) {
     const unscaledViewport = firstPage.getViewport({ scale: 1.0 });
     const pdfAspectRatio = unscaledViewport.width / unscaledViewport.height;
 
-    // 📱 手機端與桌面端精準尺寸計算
     const isMobile = window.innerWidth <= 768;
-    // 扣除工具列後的可用邊界 (留適度 padding 防止貼邊)
     const availHeight = Math.max(300, (window.innerHeight || document.documentElement.clientHeight) - 120);
     const availWidth = Math.max(280, (window.innerWidth || document.documentElement.clientWidth) - 20);
 
     let pageW, pageH;
     if (isMobile) {
-      // 手機端：單頁顯示
       if (availWidth / availHeight > pdfAspectRatio) {
         pageH = Math.floor(availHeight);
         pageW = Math.floor(pageH * pdfAspectRatio);
@@ -367,7 +366,6 @@ async function renderFlipbook(pdfData, taskId) {
         pageH = Math.floor(pageW / pdfAspectRatio);
       }
     } else {
-      // 桌面端：雙頁展書
       const spreadRatio = 2 * pdfAspectRatio;
       if (availWidth / availHeight > spreadRatio) {
         pageH = Math.floor(availHeight);
@@ -378,7 +376,6 @@ async function renderFlipbook(pdfData, taskId) {
       }
     }
 
-    // 建立輕量 DOM 骨架
     const pageElements = [];
     for (let i = 1; i <= totalPagesCount; i++) {
       const pageDiv = document.createElement('div');
@@ -393,9 +390,9 @@ async function renderFlipbook(pdfData, taskId) {
       height: pageH,
       size: "fixed",
       showCover: true,
-      usePortrait: isMobile, // 手機端開啟 Portrait 單頁模式
+      usePortrait: isMobile,
       clickToFlip: true,
-      maxShadowOpacity: isMobile ? 0.2 : 0.5 // 手機端降低陰影減輕 GPU 負擔
+      maxShadowOpacity: isMobile ? 0.2 : 0.5
     });
 
     currentPageFlip = pageFlip;
@@ -410,7 +407,6 @@ async function renderFlipbook(pdfData, taskId) {
       updatePageNumDisplay(currentPageNum, totalPagesCount);
     });
 
-    // 極速開檔：立刻渲染第 1、2、3 頁
     showLoading('⚡ 正在產生封面與前幾頁...');
     const initPages = [1, 2, 3].filter(p => p <= totalPagesCount);
     await Promise.all(initPages.map(p => renderPageToCache(p, taskId)));
@@ -500,7 +496,7 @@ function updateSliderUI(current, total) {
   updatePageNumDisplay(current, total);
 }
 
-// 📱 視窗 resize / 轉向防彈跳自動校正
+// 📱 視窗 resize 自動校正
 let resizeTimer = null;
 window.addEventListener('resize', () => {
   clearTimeout(resizeTimer);
@@ -511,44 +507,61 @@ window.addEventListener('resize', () => {
   }, 300);
 });
 
-// 事件綁定
+// 🚀 DOM 載入完成後的事件總綁定
 document.addEventListener('DOMContentLoaded', () => {
+  // 1. 載入雲端書單
   fetchDrivePDFList();
-// 📱 手機端手勢縮放 (雙指捏合 Pinch-to-Zoom + 雙擊放大 Double-Tap)
-  const viewport = document.querySelector('.flipbook-viewport');
-  let initialPinchDistance = null;
-  let initialScale = 1.0;
-  let lastTapTime = 0;
 
-  if (viewport) {
-    // 1. 觸控開始
-    viewport.addEventListener('touchstart', (e) => {
+  // 2. 按鈕縮放事件
+  const btnZoomIn = document.getElementById('btn-zoom-in');
+  const btnZoomOut = document.getElementById('btn-zoom-out');
+  const btnZoomReset = document.getElementById('btn-zoom-reset');
+
+  if (btnZoomIn) btnZoomIn.addEventListener('click', () => applyZoom(currentZoomScale + ZOOM_STEP));
+  if (btnZoomOut) btnZoomOut.addEventListener('click', () => applyZoom(currentZoomScale - ZOOM_STEP));
+  if (btnZoomReset) btnZoomReset.addEventListener('click', resetZoom);
+
+  // 3. 視窗滾輪與手機手勢整合
+  const activeViewport = document.querySelector('.flipbook-viewport');
+  if (activeViewport) {
+    // 電腦滾輪縮放 (Ctrl + 滾輪)
+    activeViewport.addEventListener('wheel', (e) => {
+      if (e.ctrlKey) {
+        e.preventDefault();
+        if (e.deltaY < 0) applyZoom(currentZoomScale + 0.1);
+        else applyZoom(currentZoomScale - 0.1);
+      }
+    }, { passive: false });
+
+    // 📱 手機端觸控手勢 (雙指捏合 + 雙擊放大)
+    let initialPinchDistance = null;
+    let initialScale = 1.0;
+    let lastTapTime = 0;
+
+    activeViewport.addEventListener('touchstart', (e) => {
       if (e.touches.length === 2) {
-        // 偵測到雙指，計算起始距離
         initialPinchDistance = Math.hypot(
           e.touches[0].clientX - e.touches[1].clientX,
           e.touches[0].clientY - e.touches[1].clientY
         );
         initialScale = currentZoomScale;
       } else if (e.touches.length === 1) {
-        // 偵測單指雙擊 (Double Tap)
         const now = Date.now();
         if (now - lastTapTime < 300) {
           e.preventDefault();
           if (currentZoomScale > 1.0) {
-            resetZoom(); // 已放大狀態 -> 還原 100%
+            resetZoom();
           } else {
-            applyZoom(1.6); // 原大小 -> 快速放大至 160%
+            applyZoom(1.6);
           }
         }
         lastTapTime = now;
       }
     }, { passive: false });
 
-    // 2. 雙指滑動中 (捏合/張開)
-    viewport.addEventListener('touchmove', (e) => {
+    activeViewport.addEventListener('touchmove', (e) => {
       if (e.touches.length === 2 && initialPinchDistance) {
-        e.preventDefault(); // 防止手機網頁著跟滾動
+        e.preventDefault();
         const currentDistance = Math.hypot(
           e.touches[0].clientX - e.touches[1].clientX,
           e.touches[0].clientY - e.touches[1].clientY
@@ -558,32 +571,14 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     }, { passive: false });
 
-    // 3. 觸控結束
-    viewport.addEventListener('touchend', (e) => {
+    activeViewport.addEventListener('touchend', (e) => {
       if (e.touches.length < 2) {
         initialPinchDistance = null;
       }
     });
   }
-  const btnZoomIn = document.getElementById('btn-zoom-in');
-  const btnZoomOut = document.getElementById('btn-zoom-out');
-  const btnZoomReset = document.getElementById('btn-zoom-reset');
 
-  if (btnZoomIn) btnZoomIn.addEventListener('click', () => applyZoom(currentZoomScale + ZOOM_STEP));
-  if (btnZoomOut) btnZoomOut.addEventListener('click', () => applyZoom(currentZoomScale - ZOOM_STEP));
-  if (btnZoomReset) btnZoomReset.addEventListener('click', resetZoom);
-
-  const viewport = document.querySelector('.flipbook-viewport');
-  if (viewport) {
-    viewport.addEventListener('wheel', (e) => {
-      if (e.ctrlKey) {
-        e.preventDefault();
-        if (e.deltaY < 0) applyZoom(currentZoomScale + 0.1);
-        else applyZoom(currentZoomScale - 0.1);
-      }
-    }, { passive: false });
-  }
-
+  // 4. 其餘介面按鈕綁定
   const btnToggleUpload = document.getElementById('btn-toggle-upload');
   if (btnToggleUpload) {
     btnToggleUpload.addEventListener('click', () => {
