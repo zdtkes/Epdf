@@ -1,7 +1,7 @@
 pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
 const GAS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzi7xUsWCMSDul7rMNiO-chdg78gmqkCCRaZN_Xw6HSQY4J5lSCciNDbMIT89qahJky/exec";
-const CF_WORKER_URL = "https://pdf-proxy.zd-81c.workers.dev/"; // 👈 請替換為您的 Cloudflare Worker 網址
+const CF_WORKER_URL = "https://pdf-proxy.zd-81c.workers.dev/"; 
 
 let currentPageFlip = null;
 let currentPdfDoc = null;
@@ -65,26 +65,43 @@ async function saveCachedPDFToDisk(fileId, uint8Data) {
   }
 }
 
-// 全域縮放狀態
+// 🔍 全域縮放與平移狀態
 let currentZoomScale = 1.0;
+let panX = 0;
+let panY = 0;
 const MIN_ZOOM = 0.7;
 const MAX_ZOOM = 2.5;
 const ZOOM_STEP = 0.15;
 
-function applyZoom(scale) {
-  currentZoomScale = Math.min(Math.max(scale, MIN_ZOOM), MAX_ZOOM);
+function updateTransform() {
   const flipbook = document.getElementById('flipbook');
   const zoomText = document.getElementById('zoom-level-text');
   
   if (flipbook) {
-    flipbook.style.transform = `scale(${currentZoomScale})`;
+    flipbook.style.transform = `translate(${panX}px, ${panY}px) scale(${currentZoomScale})`;
+    if (currentZoomScale > 1.0) {
+      flipbook.classList.add('is-zoomed');
+    } else {
+      flipbook.classList.remove('is-zoomed', 'is-dragging');
+    }
   }
   if (zoomText) {
     zoomText.textContent = `${Math.round(currentZoomScale * 100)}%`;
   }
 }
 
+function applyZoom(scale) {
+  currentZoomScale = Math.min(Math.max(scale, MIN_ZOOM), MAX_ZOOM);
+  if (currentZoomScale <= 1.0) {
+    panX = 0;
+    panY = 0;
+  }
+  updateTransform();
+}
+
 function resetZoom() {
+  panX = 0;
+  panY = 0;
   applyZoom(1.0);
 }
 
@@ -300,7 +317,7 @@ async function startBackgroundQueue(taskId) {
 }
 
 /**
- * 📖 3D 電子書渲染主引擎
+ * 📖 3D 電子書渲染主引擎（支援橫式單頁自動偵測與全螢幕滿版）
  */
 async function renderFlipbook(pdfData, taskId) {
   showLoading('⚡ 正在排版 3D 電子書...');
@@ -352,12 +369,17 @@ async function renderFlipbook(pdfData, taskId) {
     const unscaledViewport = firstPage.getViewport({ scale: 1.0 });
     const pdfAspectRatio = unscaledViewport.width / unscaledViewport.height;
 
+    // 📐 自動判斷：手機端 OR 橫式 PDF 均啟用單頁全螢幕滿版
     const isMobile = window.innerWidth <= 768;
+    const isLandscape = pdfAspectRatio > 1.1; // 長寬比 > 1.1 判定為橫式
+    const forceSinglePage = isMobile || isLandscape;
+
     const availHeight = Math.max(300, (window.innerHeight || document.documentElement.clientHeight) - 120);
     const availWidth = Math.max(280, (window.innerWidth || document.documentElement.clientWidth) - 20);
 
     let pageW, pageH;
-    if (isMobile) {
+    if (forceSinglePage) {
+      // 單頁滿版極限尺寸計算
       if (availWidth / availHeight > pdfAspectRatio) {
         pageH = Math.floor(availHeight);
         pageW = Math.floor(pageH * pdfAspectRatio);
@@ -366,6 +388,7 @@ async function renderFlipbook(pdfData, taskId) {
         pageH = Math.floor(pageW / pdfAspectRatio);
       }
     } else {
+      // 直式 PDF 桌面端雙頁展書
       const spreadRatio = 2 * pdfAspectRatio;
       if (availWidth / availHeight > spreadRatio) {
         pageH = Math.floor(availHeight);
@@ -389,8 +412,8 @@ async function renderFlipbook(pdfData, taskId) {
       width: pageW,
       height: pageH,
       size: "fixed",
-      showCover: true,
-      usePortrait: isMobile,
+      showCover: !isLandscape, // 橫式單頁時不強制雙頁封面
+      usePortrait: forceSinglePage, // 強制單頁呈現
       clickToFlip: true,
       maxShadowOpacity: isMobile ? 0.2 : 0.5
     });
@@ -403,6 +426,7 @@ async function renderFlipbook(pdfData, taskId) {
     });
 
     pageFlip.on('flip', (e) => {
+      resetZoom(); // 翻頁時自動重置縮放與平移
       const currentPageNum = e.data + 1;
       updatePageNumDisplay(currentPageNum, totalPagesCount);
     });
@@ -431,7 +455,7 @@ async function fetchDrivePDFList() {
   if (!gdriveSelect) return;
 
   try {
-    showLoading('☁️ 搜尋雲端書庫...');
+    showLoading('☁️️ 搜尋雲端書庫...');
     const res = await fetch(GAS_WEB_APP_URL);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
 
@@ -509,10 +533,8 @@ window.addEventListener('resize', () => {
 
 // 🚀 DOM 載入完成後的事件總綁定
 document.addEventListener('DOMContentLoaded', () => {
-  // 1. 載入雲端書單
   fetchDrivePDFList();
 
-  // 2. 按鈕縮放事件
   const btnZoomIn = document.getElementById('btn-zoom-in');
   const btnZoomOut = document.getElementById('btn-zoom-out');
   const btnZoomReset = document.getElementById('btn-zoom-reset');
@@ -521,10 +543,42 @@ document.addEventListener('DOMContentLoaded', () => {
   if (btnZoomOut) btnZoomOut.addEventListener('click', () => applyZoom(currentZoomScale - ZOOM_STEP));
   if (btnZoomReset) btnZoomReset.addEventListener('click', resetZoom);
 
-  // 3. 視窗滾輪與手機手勢整合
+  // 🖱️ 🤏 畫面拖拽平移 (Pan) 與觸控手勢整合
   const activeViewport = document.querySelector('.flipbook-viewport');
+  let isDragging = false;
+  let startX = 0;
+  let startY = 0;
+
   if (activeViewport) {
-    // 電腦滾輪縮放 (Ctrl + 滾輪)
+    // 1. 電腦滑鼠拖曳 (MouseDown / Move / Up)
+    activeViewport.addEventListener('mousedown', (e) => {
+      if (currentZoomScale > 1.0) {
+        isDragging = true;
+        startX = e.clientX - panX;
+        startY = e.clientY - panY;
+        const flipbook = document.getElementById('flipbook');
+        if (flipbook) flipbook.classList.add('is-dragging');
+      }
+    });
+
+    window.addEventListener('mousemove', (e) => {
+      if (isDragging && currentZoomScale > 1.0) {
+        e.preventDefault();
+        panX = e.clientX - startX;
+        panY = e.clientY - startY;
+        updateTransform();
+      }
+    });
+
+    window.addEventListener('mouseup', () => {
+      if (isDragging) {
+        isDragging = false;
+        const flipbook = document.getElementById('flipbook');
+        if (flipbook) flipbook.classList.remove('is-dragging');
+      }
+    });
+
+    // 2. 電腦滾輪 Ctrl + Wheel 縮放
     activeViewport.addEventListener('wheel', (e) => {
       if (e.ctrlKey) {
         e.preventDefault();
@@ -533,19 +587,28 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     }, { passive: false });
 
-    // 📱 手機端觸控手勢 (雙指捏合 + 雙擊放大)
+    // 3. 📱 手機端觸控手勢 (雙指捏合縮放 + 單指放大後平移拖曳 + 雙擊放大)
     let initialPinchDistance = null;
     let initialScale = 1.0;
     let lastTapTime = 0;
 
     activeViewport.addEventListener('touchstart', (e) => {
       if (e.touches.length === 2) {
+        // 雙指捏合
         initialPinchDistance = Math.hypot(
           e.touches[0].clientX - e.touches[1].clientX,
           e.touches[0].clientY - e.touches[1].clientY
         );
         initialScale = currentZoomScale;
       } else if (e.touches.length === 1) {
+        // 單指放大後平移準備
+        if (currentZoomScale > 1.0) {
+          isDragging = true;
+          startX = e.touches[0].clientX - panX;
+          startY = e.touches[0].clientY - panY;
+        }
+
+        // 雙擊放大/還原
         const now = Date.now();
         if (now - lastTapTime < 300) {
           e.preventDefault();
@@ -561,6 +624,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
     activeViewport.addEventListener('touchmove', (e) => {
       if (e.touches.length === 2 && initialPinchDistance) {
+        // 雙指捏合中
         e.preventDefault();
         const currentDistance = Math.hypot(
           e.touches[0].clientX - e.touches[1].clientX,
@@ -568,12 +632,21 @@ document.addEventListener('DOMContentLoaded', () => {
         );
         const factor = currentDistance / initialPinchDistance;
         applyZoom(initialScale * factor);
+      } else if (e.touches.length === 1 && isDragging && currentZoomScale > 1.0) {
+        // 單指放大後拖曳畫面中
+        e.preventDefault();
+        panX = e.touches[0].clientX - startX;
+        panY = e.touches[0].clientY - startY;
+        updateTransform();
       }
     }, { passive: false });
 
     activeViewport.addEventListener('touchend', (e) => {
       if (e.touches.length < 2) {
         initialPinchDistance = null;
+      }
+      if (e.touches.length === 0) {
+        isDragging = false;
       }
     });
   }
