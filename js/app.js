@@ -1,13 +1,14 @@
 pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
 const GAS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzi7xUsWCMSDul7rMNiO-chdg78gmqkCCRaZN_Xw6HSQY4J5lSCciNDbMIT89qahJky/exec";
-const CF_WORKER_URL = "https://pdf-proxy.zd-81c.workers.dev/"; 
+const CF_WORKER_URL = "https://pdf-proxy.zd-81c.workers.dev/";[cite: 6]
 
 let currentPageFlip = null;
 let currentPdfDoc = null;
 let totalPagesCount = 0;
 let currentLoadingTaskId = 0;
 let rawPdfBuffer = null;
+let currentLoadedFileId = null; // ⚡ 記錄目前載入的 File ID，防止重複觸發
 
 // ⚡ 核心狀態與永久圖片快取
 const renderedImageCache = new Map(); 
@@ -122,6 +123,7 @@ function hideLoading() {
  */
 async function loadDrivePDF(fileId) {
   const taskId = ++currentLoadingTaskId;
+  currentLoadedFileId = fileId;
 
   if (pdfMemoryCache.has(fileId)) {
     showLoading('⚡ 從記憶體秒開電子書...');
@@ -144,7 +146,7 @@ async function loadDrivePDF(fileId) {
 
   try {
     showLoading('⚡ 正在透過高速代理連線...');
-    const proxyUrl = `${CF_WORKER_URL}/?id=${fileId}`;
+    const proxyUrl = `${CF_WORKER_URL}/?id=${fileId}`;[cite: 6]
     const res = await fetch(proxyUrl);
 
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -317,37 +319,17 @@ async function startBackgroundQueue(taskId) {
 }
 
 /**
- * 📖 3D 電子書渲染主引擎（支援橫式單頁自動偵測與全螢幕滿版）
+ * 📖 3D 電子書渲染主引擎（無縫過渡 + 秒開優化版）
  */
 async function renderFlipbook(pdfData, taskId) {
   showLoading('⚡ 正在排版 3D 電子書...');
   resetZoom();
 
-  renderedImageCache.forEach(url => URL.revokeObjectURL(url));
-  renderedImageCache.clear();
-  renderingPagesSet.clear();
-
-  const dropzoneSection = document.getElementById('dropzone-section');
-  if (dropzoneSection) dropzoneSection.style.display = 'none';
-
-  if (currentPdfDoc) {
-    try { currentPdfDoc.destroy(); } catch (e) {}
-    currentPdfDoc = null;
-  }
-  if (currentPageFlip) {
-    try { currentPageFlip.destroy(); } catch (e) {}
-    currentPageFlip = null;
-  }
-
   const containerViewport = document.querySelector('.flipbook-viewport');
   if (!containerViewport) return;
 
-  let oldFlipbook = document.getElementById('flipbook');
-  if (oldFlipbook) oldFlipbook.remove();
-
-  const flipbookContainer = document.createElement('div');
-  flipbookContainer.id = 'flipbook';
-  containerViewport.appendChild(flipbookContainer);
+  const dropzoneSection = document.getElementById('dropzone-section');
+  if (dropzoneSection) dropzoneSection.style.display = 'none';
 
   try {
     const pdfDataCopy = pdfData.slice(0);
@@ -359,6 +341,26 @@ async function renderFlipbook(pdfData, taskId) {
 
     const pdf = await Promise.race([loadingTask.promise, timeoutPromise]);
     if (taskId !== currentLoadingTaskId) return;
+
+    // 清除舊快取資源
+    renderedImageCache.forEach(url => URL.revokeObjectURL(url));
+    renderedImageCache.clear();
+    renderingPagesSet.clear();
+
+    if (currentPdfDoc) {
+      try { currentPdfDoc.destroy(); } catch (e) {}
+    }
+    if (currentPageFlip) {
+      try { currentPageFlip.destroy(); } catch (e) {}
+    }
+
+    // ⚡ 準備全新的 Flipbook 容器，先不急著銷毀舊的以避免空白畫面
+    let oldFlipbook = document.getElementById('flipbook');
+    if (oldFlipbook) oldFlipbook.remove();
+
+    const flipbookContainer = document.createElement('div');
+    flipbookContainer.id = 'flipbook';
+    containerViewport.appendChild(flipbookContainer);
 
     currentPdfDoc = pdf;
     totalPagesCount = pdf.numPages;
@@ -424,19 +426,20 @@ async function renderFlipbook(pdfData, taskId) {
     });
 
     pageFlip.on('flip', (e) => {
-      resetZoom(); // 翻頁時自動重置縮放與平移
+      resetZoom();
       const currentPageNum = e.data + 1;
       updatePageNumDisplay(currentPageNum, totalPagesCount);
     });
 
-    showLoading('⚡ 正在產生封面與前幾頁...');
-    const initPages = [1, 2, 3].filter(p => p <= totalPagesCount);
-    await Promise.all(initPages.map(p => renderPageToCache(p, taskId)));
+    // ⚡ 僅繪製第 1 頁（封面）即立刻開書，不再死等 1~3 頁全部渲染
+    showLoading('⚡ 正在產生封面...');
+    await renderPageToCache(1, taskId);
 
     if (taskId === currentLoadingTaskId) {
       hideLoading();
     }
 
+    // 剩餘頁面交給背景排程處理
     startBackgroundQueue(taskId);
 
   } catch (err) {
@@ -541,17 +544,15 @@ document.addEventListener('DOMContentLoaded', () => {
   if (btnZoomOut) btnZoomOut.addEventListener('click', () => applyZoom(currentZoomScale - ZOOM_STEP));
   if (btnZoomReset) btnZoomReset.addEventListener('click', resetZoom);
 
-  // 🖱️️ 🤏 畫面拖拽平移 (Pan) 與觸控手勢整合（防誤觸翻頁加強版）
+  // 🖱 🤏 畫面拖拽平移與防誤觸翻頁
   const activeViewport = document.querySelector('.flipbook-viewport');
   let isDragging = false;
   let startX = 0;
   let startY = 0;
 
   if (activeViewport) {
-    // 1. 電腦滑鼠拖曳 (MouseDown) - 使用 capture (true) 優先捕獲並攔截
     activeViewport.addEventListener('mousedown', (e) => {
       if (currentZoomScale > 1.0) {
-        // 🛑 核心修復：放大狀態下，切斷事件向下傳遞給 PageFlip，防止放開滑鼠觸發翻頁
         e.stopPropagation();
         e.preventDefault();
         isDragging = true;
@@ -584,7 +585,6 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     }, true);
 
-    // 2. 電腦滾輪 Ctrl + Wheel 縮放
     activeViewport.addEventListener('wheel', (e) => {
       if (e.ctrlKey) {
         e.preventDefault();
@@ -593,31 +593,27 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     }, { passive: false });
 
-    // 3. 📱 手機端觸控手勢 (雙指捏合縮放 + 單指放大後平移拖曳 + 雙擊放大)
     let initialPinchDistance = null;
     let initialScale = 1.0;
     let lastTapTime = 0;
 
     activeViewport.addEventListener('touchstart', (e) => {
       if (currentZoomScale > 1.0) {
-        e.stopPropagation(); // 🛑 放大狀態下阻止 PageFlip 接收觸控翻頁
+        e.stopPropagation();
       }
       if (e.touches.length === 2) {
-        // 雙指捏合
         initialPinchDistance = Math.hypot(
           e.touches[0].clientX - e.touches[1].clientX,
           e.touches[0].clientY - e.touches[1].clientY
         );
         initialScale = currentZoomScale;
       } else if (e.touches.length === 1) {
-        // 單指放大後平移準備
         if (currentZoomScale > 1.0) {
           isDragging = true;
           startX = e.touches[0].clientX - panX;
           startY = e.touches[0].clientY - panY;
         }
 
-        // 雙擊放大/還原
         const now = Date.now();
         if (now - lastTapTime < 300) {
           e.preventDefault();
@@ -636,7 +632,6 @@ document.addEventListener('DOMContentLoaded', () => {
         e.stopPropagation();
       }
       if (e.touches.length === 2 && initialPinchDistance) {
-        // 雙指捏合中
         e.preventDefault();
         const currentDistance = Math.hypot(
           e.touches[0].clientX - e.touches[1].clientX,
@@ -645,7 +640,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const factor = currentDistance / initialPinchDistance;
         applyZoom(initialScale * factor);
       } else if (e.touches.length === 1 && isDragging && currentZoomScale > 1.0) {
-        // 單指放大後拖曳畫面中
         e.preventDefault();
         panX = e.touches[0].clientX - startX;
         panY = e.touches[0].clientY - startY;
@@ -666,7 +660,17 @@ document.addEventListener('DOMContentLoaded', () => {
     }, { capture: true });
   }
 
-  // 4. 其餘介面按鈕綁定
+  // ⚡ 下拉選單切換優化：若選擇相同檔案自動忽略，不同檔案則開啟無縫過渡
+  const gdriveSelect = document.getElementById('gdrive-select');
+  if (gdriveSelect) {
+    gdriveSelect.addEventListener('change', (e) => {
+      const selectedId = e.target.value;
+      if (selectedId && selectedId !== currentLoadedFileId) {
+        loadDrivePDF(selectedId);
+      }
+    });
+  }
+
   const btnToggleUpload = document.getElementById('btn-toggle-upload');
   if (btnToggleUpload) {
     btnToggleUpload.addEventListener('click', () => {
@@ -674,13 +678,6 @@ document.addEventListener('DOMContentLoaded', () => {
       if (dropzoneSection) {
         dropzoneSection.style.display = (dropzoneSection.style.display === 'none') ? 'block' : 'none';
       }
-    });
-  }
-
-  const gdriveSelect = document.getElementById('gdrive-select');
-  if (gdriveSelect) {
-    gdriveSelect.addEventListener('change', (e) => {
-      if (e.target.value) loadDrivePDF(e.target.value);
     });
   }
 
@@ -700,6 +697,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const reader = new FileReader();
         reader.onload = function() { 
           const taskId = ++currentLoadingTaskId;
+          currentLoadedFileId = null;
           rawPdfBuffer = new Uint8Array(this.result);
           renderFlipbook(rawPdfBuffer, taskId); 
         };
