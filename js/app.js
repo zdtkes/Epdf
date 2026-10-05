@@ -1,14 +1,14 @@
 pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/3.11.174/pdf.worker.min.js';
 
 const GAS_WEB_APP_URL = "https://script.google.com/macros/s/AKfycbzi7xUsWCMSDul7rMNiO-chdg78gmqkCCRaZN_Xw6HSQY4J5lSCciNDbMIT89qahJky/exec";
-const CF_WORKER_URL = "https://pdf-proxy.zd-81c.workers.dev/";[cite: 6]
+const CF_WORKER_URL = "https://pdf-proxy.zd-81c.workers.dev/";
 
 let currentPageFlip = null;
 let currentPdfDoc = null;
 let totalPagesCount = 0;
 let currentLoadingTaskId = 0;
 let rawPdfBuffer = null;
-let currentLoadedFileId = null; // ⚡ 記錄目前載入的 File ID，防止重複觸發
+let currentLoadedFileId = null;
 
 // ⚡ 核心狀態與永久圖片快取
 const renderedImageCache = new Map(); 
@@ -146,7 +146,7 @@ async function loadDrivePDF(fileId) {
 
   try {
     showLoading('⚡ 正在透過高速代理連線...');
-    const proxyUrl = `${CF_WORKER_URL}/?id=${fileId}`;[cite: 6]
+    const proxyUrl = `${CF_WORKER_URL}/?id=${fileId}`;
     const res = await fetch(proxyUrl);
 
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
@@ -319,7 +319,7 @@ async function startBackgroundQueue(taskId) {
 }
 
 /**
- * 📖 3D 電子書渲染主引擎（無縫過渡 + 秒開優化版）
+ * 📖 3D 電子書渲染主引擎
  */
 async function renderFlipbook(pdfData, taskId) {
   showLoading('⚡ 正在排版 3D 電子書...');
@@ -342,7 +342,6 @@ async function renderFlipbook(pdfData, taskId) {
     const pdf = await Promise.race([loadingTask.promise, timeoutPromise]);
     if (taskId !== currentLoadingTaskId) return;
 
-    // 清除舊快取資源
     renderedImageCache.forEach(url => URL.revokeObjectURL(url));
     renderedImageCache.clear();
     renderingPagesSet.clear();
@@ -354,7 +353,6 @@ async function renderFlipbook(pdfData, taskId) {
       try { currentPageFlip.destroy(); } catch (e) {}
     }
 
-    // ⚡ 準備全新的 Flipbook 容器，先不急著銷毀舊的以避免空白畫面
     let oldFlipbook = document.getElementById('flipbook');
     if (oldFlipbook) oldFlipbook.remove();
 
@@ -371,7 +369,6 @@ async function renderFlipbook(pdfData, taskId) {
     const unscaledViewport = firstPage.getViewport({ scale: 1.0 });
     const pdfAspectRatio = unscaledViewport.width / unscaledViewport.height;
 
-    // 📐 自動判斷：手機端 OR 橫式 PDF 均啟用單頁全螢幕滿版
     const isMobile = window.innerWidth <= 768;
     const isLandscape = pdfAspectRatio > 1.1; 
     const forceSinglePage = isMobile || isLandscape;
@@ -431,7 +428,6 @@ async function renderFlipbook(pdfData, taskId) {
       updatePageNumDisplay(currentPageNum, totalPagesCount);
     });
 
-    // ⚡ 僅繪製第 1 頁（封面）即立刻開書，不再死等 1~3 頁全部渲染
     showLoading('⚡ 正在產生封面...');
     await renderPageToCache(1, taskId);
 
@@ -439,7 +435,6 @@ async function renderFlipbook(pdfData, taskId) {
       hideLoading();
     }
 
-    // 剩餘頁面交給背景排程處理
     startBackgroundQueue(taskId);
 
   } catch (err) {
@@ -660,7 +655,6 @@ document.addEventListener('DOMContentLoaded', () => {
     }, { capture: true });
   }
 
-  // ⚡ 下拉選單切換優化：若選擇相同檔案自動忽略，不同檔案則開啟無縫過渡
   const gdriveSelect = document.getElementById('gdrive-select');
   if (gdriveSelect) {
     gdriveSelect.addEventListener('change', (e) => {
